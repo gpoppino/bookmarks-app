@@ -1,0 +1,13 @@
+# Python
+bookmark-backend/venv/
+bookmark-backend/__pycache__/
+bookmark-backend/*.pyc
+bookmark-backend/bookmarks.db
+
+# Node
+bookmark-client/node_modules/
+bookmark-client/dist/
+
+# Env
+.env.local
+.env
