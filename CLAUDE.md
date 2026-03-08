@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Full-stack bookmarking app with three independently runnable components:
 
 - **`bookmark-backend/`** — Python FastAPI REST API with SQLAlchemy ORM and SQLite storage. All logic lives in a single file: `main.py`. The backend scrapes webpage metadata (title, description) using BeautifulSoup when a bookmark is created or its URL is updated.
-- **`bookmark-web-client/`** — React 18 + TypeScript SPA built with Vite. All backend communication goes through `src/api/client.ts` (single source of truth). State lives in `App.tsx` and is fed by the `useBookmarks` hook, which debounces search queries before hitting the API.
+- **`bookmark-web-client/`** — React 18 + TypeScript SPA built with Vite. All backend communication goes through `src/api/client.ts` (single source of truth). State lives in `App.tsx` and is fed by the `useBookmarks` hook, which debounces search queries before hitting the API. `BookmarkCard` supports inline editing (URL and tags).
 - **`bookmark-cli-client/`** — Go CLI client built with Cobra. Covers all backend endpoints (register, login, logout, me, list, add, update, delete, tags). JWT session token stored at `~/.config/bookmarks-cli/session` (permissions `0600`).
 
 ### Data flow
