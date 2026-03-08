@@ -86,6 +86,10 @@ class BookmarkRequest(BaseModel):
     url: str
     tags: List[str] = []
 
+class BookmarkUpdateRequest(BaseModel):
+    url: Optional[str] = None
+    tags: Optional[List[str]] = None
+
 class UserRegisterRequest(BaseModel):
     username: str
     password: str
@@ -289,6 +293,44 @@ async def create_bookmark(
     db.refresh(new_bookmark)
 
     return serialize_bookmark(new_bookmark)
+
+
+@app.put("/api/bookmarks/{bookmark_id}")
+async def update_bookmark(
+    bookmark_id: int,
+    request: BookmarkUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
+):
+    bookmark = db.query(BookmarkDB).filter(
+        BookmarkDB.id == bookmark_id,
+        BookmarkDB.user_id == current_user.id
+    ).first()
+    if not bookmark:
+        raise HTTPException(status_code=404, detail="Bookmark not found")
+
+    if request.url is not None and request.url != bookmark.url:
+        metadata = fetch_bookmark_metadata(request.url)
+        if not metadata["success"]:
+            raise HTTPException(status_code=400, detail=metadata["error"])
+        bookmark.url = metadata["url"]
+        bookmark.title = metadata["title"]
+        bookmark.description = metadata["description"]
+
+    if request.tags is not None:
+        bookmark.tags = []
+        for tag_name in request.tags:
+            clean_tag = tag_name.strip().lower()
+            if not clean_tag:
+                continue
+            db_tag = db.query(TagDB).filter(TagDB.name == clean_tag).first()
+            if not db_tag:
+                db_tag = TagDB(name=clean_tag)
+            bookmark.tags.append(db_tag)
+
+    db.commit()
+    db.refresh(bookmark)
+    return serialize_bookmark(bookmark)
 
 
 @app.delete("/api/bookmarks/{bookmark_id}")

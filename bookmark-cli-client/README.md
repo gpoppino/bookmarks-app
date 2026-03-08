@@ -58,6 +58,11 @@ Username and password flags are optional — the CLI will prompt if omitted. Pas
 ./bookmarks add -u https://go.dev
 ./bookmarks add -u https://go.dev -t golang,programming
 
+# Update a bookmark's URL (re-scrapes title/description) and/or tags
+./bookmarks update -i <id> --url https://new-url.com
+./bookmarks update -i <id> --tags newtag1,newtag2
+./bookmarks update -i <id> --url https://new-url.com --tags newtag1,newtag2
+
 # Delete a bookmark (prompts for confirmation)
 ./bookmarks delete -i <id>
 ```

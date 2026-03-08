@@ -232,6 +232,29 @@ func (c *Client) AddBookmark(bookmarkURL string, tags []string) (Bookmark, error
 	return bookmark, nil
 }
 
+func (c *Client) UpdateBookmark(id int, bookmarkURL *string, tags *[]string) (Bookmark, error) {
+	payload := map[string]any{}
+	if bookmarkURL != nil {
+		payload["url"] = *bookmarkURL
+	}
+	if tags != nil {
+		payload["tags"] = *tags
+	}
+	resp, err := c.doAuthed("PUT", "/api/bookmarks/"+strconv.Itoa(id), payload)
+	if err != nil {
+		return Bookmark{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return Bookmark{}, readAPIError(resp)
+	}
+	var bookmark Bookmark
+	if err := json.NewDecoder(resp.Body).Decode(&bookmark); err != nil {
+		return Bookmark{}, err
+	}
+	return bookmark, nil
+}
+
 func (c *Client) DeleteBookmark(id int) error {
 	resp, err := c.doAuthed("DELETE", "/api/bookmarks/"+strconv.Itoa(id), nil)
 	if err != nil {

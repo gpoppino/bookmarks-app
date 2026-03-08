@@ -92,6 +92,47 @@ var deleteCmd = &cobra.Command{
 	},
 }
 
+var updateCmd = &cobra.Command{
+	Use:   "update",
+	Short: "Update a bookmark's URL and/or tags",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		id, _ := cmd.Flags().GetInt("id")
+		if id == 0 {
+			return fmt.Errorf("--id/-i is required")
+		}
+
+		var urlPtr *string
+		if cmd.Flags().Changed("url") {
+			u, _ := cmd.Flags().GetString("url")
+			urlPtr = &u
+		}
+
+		var tagsPtr *[]string
+		if cmd.Flags().Changed("tags") {
+			tagsStr, _ := cmd.Flags().GetString("tags")
+			var tags []string
+			for _, t := range strings.Split(tagsStr, ",") {
+				t = strings.TrimSpace(t)
+				if t != "" {
+					tags = append(tags, t)
+				}
+			}
+			tagsPtr = &tags
+		}
+
+		if urlPtr == nil && tagsPtr == nil {
+			return fmt.Errorf("at least one of --url/-u or --tags/-t is required")
+		}
+
+		bookmark, err := client.UpdateBookmark(id, urlPtr, tagsPtr)
+		if err != nil {
+			return err
+		}
+		fmt.Printf("Updated bookmark %d: %s [%s]\n", bookmark.ID, bookmark.URL, strings.Join(bookmark.Tags, ","))
+		return nil
+	},
+}
+
 var tagsCmd = &cobra.Command{
 	Use:   "tags",
 	Short: "List all tags",
@@ -118,5 +159,9 @@ func init() {
 
 	deleteCmd.Flags().IntP("id", "i", 0, "Bookmark ID to delete (required)")
 
-	rootCmd.AddCommand(listCmd, addCmd, deleteCmd, tagsCmd)
+	updateCmd.Flags().IntP("id", "i", 0, "Bookmark ID to update (required)")
+	updateCmd.Flags().StringP("url", "u", "", "New URL (re-scrapes title and description)")
+	updateCmd.Flags().StringP("tags", "t", "", "New comma-separated tags (replaces existing tags)")
+
+	rootCmd.AddCommand(listCmd, addCmd, deleteCmd, updateCmd, tagsCmd)
 }
