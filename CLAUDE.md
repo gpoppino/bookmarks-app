@@ -7,7 +7,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Full-stack bookmarking app with two independently runnable services:
 
 - **`bookmark-backend/`** — Python FastAPI REST API with SQLAlchemy ORM and SQLite storage. All logic lives in a single file: `main.py`. The backend scrapes webpage metadata (title, description) using BeautifulSoup when a bookmark is created.
-- **`bookmark-client/`** — React 18 + TypeScript SPA built with Vite. All backend communication goes through `src/api/client.ts` (single source of truth). State lives in `App.tsx` and is fed by the `useBookmarks` hook, which debounces search queries before hitting the API.
+- **`bookmark-web-client/`** — React 18 + TypeScript SPA built with Vite. All backend communication goes through `src/api/client.ts` (single source of truth). State lives in `App.tsx` and is fed by the `useBookmarks` hook, which debounces search queries before hitting the API.
 
 ### Data flow
 
@@ -54,4 +54,4 @@ App runs at `http://localhost:3000`. Requires the backend to be running first.
 
 ## Environment
 
-`bookmark-client/.env.local` — set `VITE_API_URL` to override the default backend URL (`http://127.0.0.1:8000`).
+`bookmark-web-client/.env.local` — set `VITE_API_URL` to override the default backend URL (`http://127.0.0.1:8000`).
