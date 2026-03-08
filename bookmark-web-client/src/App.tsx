@@ -14,7 +14,7 @@ export default function App() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const { bookmarks, loading, error, addBookmark, removeBookmark } = useBookmarks({
+  const { bookmarks, loading, error, addBookmark, removeBookmark, replaceBookmark } = useBookmarks({
     search,
     selectedTag,
   });
@@ -26,6 +26,11 @@ export default function App() {
     } catch (err) {
       console.error('Failed to delete bookmark on server:', err);
     }
+  };
+
+  const handleUpdate = async (id: number, payload: { url?: string; tags?: string[] }) => {
+    const updated = await api.updateBookmark(id, payload);
+    replaceBookmark(updated);
   };
 
   const handleBookmarkAdded = (bookmark: Bookmark) => {
@@ -76,6 +81,7 @@ export default function App() {
             loading={loading}
             error={error}
             onDelete={handleDelete}
+            onUpdate={handleUpdate}
             onTagClick={(tag) => {
               setSelectedTag(tag);
               setSearch('');

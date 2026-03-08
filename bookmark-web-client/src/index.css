@@ -394,6 +394,30 @@ body {
   flex-shrink: 0;
 }
 
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.card-edit {
+  background: none;
+  border: none;
+  color: var(--text-3);
+  cursor: pointer;
+  padding: 4px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color .15s, background .15s;
+}
+
+.card-edit:hover {
+  color: var(--accent);
+  background: rgba(200,240,106,.08);
+}
+
 .card-delete {
   background: none;
   border: none;
@@ -410,6 +434,40 @@ body {
 .card-delete:hover {
   color: var(--red);
   background: rgba(255,107,107,.1);
+}
+
+.card-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.card-edit-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-secondary {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 10px 16px;
+  cursor: pointer;
+  transition: border-color .15s, color .15s;
+}
+
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--border-hi);
+  color: var(--text);
+}
+
+.btn-secondary:disabled {
+  opacity: .5;
+  cursor: not-allowed;
 }
 
 .card-title {

@@ -41,5 +41,9 @@ export function useBookmarks({ search, selectedTag }: UseBookmarksOptions) {
     setBookmarks((prev) => prev.filter((b) => b.id !== id));
   };
 
-  return { bookmarks, loading, error, addBookmark, removeBookmark, refetch: fetchBookmarks };
+  const replaceBookmark = (updated: Bookmark) => {
+    setBookmarks((prev) => prev.map((b) => (b.id === updated.id ? updated : b)));
+  };
+
+  return { bookmarks, loading, error, addBookmark, removeBookmark, replaceBookmark, refetch: fetchBookmarks };
 }

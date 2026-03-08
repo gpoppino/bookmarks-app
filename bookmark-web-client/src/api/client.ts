@@ -41,6 +41,13 @@ export const api = {
     });
   },
 
+  updateBookmark(id: number, payload: { url?: string; tags?: string[] }): Promise<Bookmark> {
+    return request<Bookmark>(`/api/bookmarks/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    });
+  },
+
   deleteBookmark(id: number): Promise<{ success: boolean; message: string }> {
     return request(`/api/bookmarks/${id}`, { method: 'DELETE' });
   },

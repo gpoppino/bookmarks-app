@@ -6,6 +6,7 @@ interface BookmarkGalleryProps {
   loading: boolean;
   error: string | null;
   onDelete: (id: number) => void;
+  onUpdate: (id: number, payload: { url?: string; tags?: string[] }) => Promise<void>;
   onTagClick: (tag: string) => void;
 }
 
@@ -14,6 +15,7 @@ export function BookmarkGallery({
   loading,
   error,
   onDelete,
+  onUpdate,
   onTagClick,
 }: BookmarkGalleryProps) {
   if (loading) {
@@ -58,6 +60,7 @@ export function BookmarkGallery({
           key={bookmark.id}
           bookmark={bookmark}
           onDelete={onDelete}
+          onUpdate={onUpdate}
           onTagClick={onTagClick}
         />
       ))}
