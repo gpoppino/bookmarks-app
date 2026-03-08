@@ -8,29 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
-	"strings"
 	"time"
 )
-
-// NaiveTime handles timestamps without timezone info from the backend.
-type NaiveTime struct{ time.Time }
-
-func (t *NaiveTime) UnmarshalJSON(data []byte) error {
-	s := strings.Trim(string(data), `"`)
-	formats := []string{
-		time.RFC3339Nano,
-		time.RFC3339,
-		"2006-01-02T15:04:05.999999",
-		"2006-01-02T15:04:05",
-	}
-	for _, f := range formats {
-		if parsed, err := time.Parse(f, s); err == nil {
-			t.Time = parsed
-			return nil
-		}
-	}
-	return fmt.Errorf("cannot parse time: %s", s)
-}
 
 type Client struct {
 	BaseURL    string
@@ -45,18 +24,18 @@ func NewClient(baseURL string) *Client {
 }
 
 type User struct {
-	ID        int        `json:"id"`
-	Username  string     `json:"username"`
-	CreatedAt NaiveTime  `json:"created_at"`
+	ID        int       `json:"id"`
+	Username  string    `json:"username"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 type Bookmark struct {
-	ID          int        `json:"id"`
-	URL         string     `json:"url"`
-	Title       string     `json:"title"`
-	Description string     `json:"description"`
-	Tags        []string   `json:"tags"`
-	CreatedAt   NaiveTime  `json:"created_at"`
+	ID          int       `json:"id"`
+	URL         string    `json:"url"`
+	Title       string    `json:"title"`
+	Description string    `json:"description"`
+	Tags        []string  `json:"tags"`
+	CreatedAt   time.Time `json:"created_at"`
 }
 
 type Tag struct {

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 from typing import List, Optional
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import os
 
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Table, ForeignKey, or_
@@ -45,7 +45,7 @@ class UserDB(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     bookmarks = relationship("BookmarkDB", back_populates="user")
 
 class TagDB(Base):
@@ -59,7 +59,7 @@ class BookmarkDB(Base):
     url = Column(String, index=True)
     title = Column(String)
     description = Column(Text)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
     user = relationship("UserDB", back_populates="bookmarks")
     tags = relationship("TagDB", secondary=bookmark_tag_association, backref="bookmarks")
@@ -109,7 +109,7 @@ def verify_password(plain: str, hashed: str) -> bool:
 
 def create_access_token(data: dict, expires_delta: timedelta) -> str:
     to_encode = data.copy()
-    to_encode["exp"] = datetime.utcnow() + expires_delta
+    to_encode["exp"] = datetime.now(timezone.utc) + expires_delta
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
 def get_db():
@@ -156,13 +156,19 @@ def fetch_bookmark_metadata(url: str) -> dict:
     except requests.exceptions.RequestException as e:
         return {"success": False, "url": url, "error": str(e)}
 
+def as_utc(dt: datetime) -> datetime:
+    """Ensure a datetime is timezone-aware (UTC). SQLite stores naive datetimes."""
+    if dt is not None and dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
+
 def serialize_bookmark(b: BookmarkDB) -> dict:
     return {
         "id": b.id,
         "url": b.url,
         "title": b.title,
         "description": b.description,
-        "created_at": b.created_at,
+        "created_at": as_utc(b.created_at),
         "tags": [t.name for t in b.tags]
     }
 
@@ -182,7 +188,7 @@ async def register(request: UserRegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
-    return {"id": user.id, "username": user.username, "created_at": user.created_at}
+    return {"id": user.id, "username": user.username, "created_at": as_utc(user.created_at)}
 
 
 @app.post("/api/auth/login")
@@ -202,7 +208,7 @@ async def login(request: UserLoginRequest, response: Response, db: Session = Dep
         samesite="lax",
         max_age=ACCESS_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
     )
-    return {"id": user.id, "username": user.username, "created_at": user.created_at}
+    return {"id": user.id, "username": user.username, "created_at": as_utc(user.created_at)}
 
 
 @app.post("/api/auth/logout")
@@ -213,7 +219,7 @@ async def logout(response: Response):
 
 @app.get("/api/auth/me")
 async def me(current_user: UserDB = Depends(get_current_user)):
-    return {"id": current_user.id, "username": current_user.username, "created_at": current_user.created_at}
+    return {"id": current_user.id, "username": current_user.username, "created_at": as_utc(current_user.created_at)}
 
 
 # ==========================================
