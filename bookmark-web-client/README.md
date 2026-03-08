@@ -33,7 +33,7 @@ src/
 │   └── client.ts          # All API calls to the backend (single source of truth)
 ├── components/
 │   ├── AddBookmarkForm.tsx # Form to submit new bookmarks
-│   ├── BookmarkCard.tsx    # Individual bookmark card with tags & delete
+│   ├── BookmarkCard.tsx    # Individual bookmark card with inline edit, tags & delete
 │   ├── BookmarkGallery.tsx # Grid of bookmark cards + loading/empty states
 │   └── SearchBar.tsx       # Search input + active tag filter indicator
 ├── hooks/
@@ -51,6 +51,7 @@ src/
 - **Tags** — add comma-separated tags when saving a bookmark
 - **Search** — debounced live search across title, description, and URL (server-side)
 - **Tag filter** — click any tag pill to filter the gallery by that tag
+- **Edit** — inline edit form on each card to update the URL (re-scrapes title & description) and/or tags
 - **Delete** — optimistic UI deletion with server sync
 - **Skeleton loading** — polished loading state while fetching
 
