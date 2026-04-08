@@ -5,8 +5,8 @@ bookmark-backend/*.pyc
 bookmark-backend/bookmarks.db
 
 # Node
-bookmark-client/node_modules/
-bookmark-client/dist/
+bookmark-web-client/node_modules/
+bookmark-web-client/dist/
 
 # Env
 .env.local

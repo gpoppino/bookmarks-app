@@ -98,6 +98,10 @@ class UserLoginRequest(BaseModel):
     username: str
     password: str
 
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+
 # ==========================================
 # HELPERS
 # ==========================================
@@ -220,6 +224,19 @@ async def logout(response: Response):
 @app.get("/api/auth/me")
 async def me(current_user: UserDB = Depends(get_current_user)):
     return {"id": current_user.id, "username": current_user.username, "created_at": as_utc(current_user.created_at)}
+
+
+@app.put("/api/auth/password")
+async def change_password(
+    req: ChangePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
+):
+    if not verify_password(req.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    current_user.hashed_password = hash_password(req.new_password)
+    db.commit()
+    return {"message": "Password updated successfully"}
 
 
 # ==========================================

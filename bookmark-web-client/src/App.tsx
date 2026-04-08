@@ -53,6 +53,7 @@ export default function App() {
           <p className="header-sub">Your personal bookmark collection</p>
           <div className="header-user">
             <span className="header-username">{user?.username}</span>
+            <button className="btn-secondary" onClick={() => navigate('/change-password')}>Change password</button>
             <button className="btn-logout" onClick={handleLogout}>Sign out</button>
           </div>
         </div>
