@@ -7,6 +7,7 @@ import { AuthProvider } from './context/AuthContext.tsx'
 import { ProtectedRoute } from './components/ProtectedRoute.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
 import { RegisterPage } from './pages/RegisterPage.tsx'
+import { ChangePasswordPage } from './pages/ChangePasswordPage.tsx'
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
@@ -16,6 +17,11 @@ createRoot(document.getElementById('root')!).render(
           <Route path="/" element={
             <ProtectedRoute>
               <App />
+            </ProtectedRoute>
+          } />
+          <Route path="/change-password" element={
+            <ProtectedRoute>
+              <ChangePasswordPage />
             </ProtectedRoute>
           } />
           <Route path="/login" element={<LoginPage />} />

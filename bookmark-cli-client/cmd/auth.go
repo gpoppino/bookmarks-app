@@ -122,6 +122,40 @@ var meCmd = &cobra.Command{
 	},
 }
 
+var changePasswordCmd = &cobra.Command{
+	Use:   "change-password",
+	Short: "Change your password",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		currentPassword, _ := cmd.Flags().GetString("current-password")
+		newPassword, _ := cmd.Flags().GetString("new-password")
+		var err error
+		if currentPassword == "" {
+			currentPassword, err = promptPassword("Current password")
+			if err != nil {
+				return err
+			}
+		}
+		if newPassword == "" {
+			newPassword, err = promptPassword("New password")
+			if err != nil {
+				return err
+			}
+			confirm, err := promptPassword("Confirm new password")
+			if err != nil {
+				return err
+			}
+			if newPassword != confirm {
+				return fmt.Errorf("passwords do not match")
+			}
+		}
+		if err := client.ChangePassword(currentPassword, newPassword); err != nil {
+			return err
+		}
+		fmt.Println("Password updated successfully.")
+		return nil
+	},
+}
+
 func init() {
 	loginCmd.Flags().StringP("username", "n", "", "Username")
 	loginCmd.Flags().StringP("password", "p", "", "Password")
@@ -129,5 +163,8 @@ func init() {
 	registerCmd.Flags().StringP("username", "n", "", "Username")
 	registerCmd.Flags().StringP("password", "p", "", "Password")
 
-	rootCmd.AddCommand(loginCmd, registerCmd, logoutCmd, meCmd)
+	changePasswordCmd.Flags().StringP("current-password", "c", "", "Current password")
+	changePasswordCmd.Flags().StringP("new-password", "n", "", "New password")
+
+	rootCmd.AddCommand(loginCmd, registerCmd, logoutCmd, meCmd, changePasswordCmd)
 }

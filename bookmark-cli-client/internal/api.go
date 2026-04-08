@@ -161,6 +161,22 @@ func (c *Client) Me() (User, error) {
 	return user, nil
 }
 
+func (c *Client) ChangePassword(currentPassword, newPassword string) error {
+	payload := map[string]string{
+		"current_password": currentPassword,
+		"new_password":     newPassword,
+	}
+	resp, err := c.doAuthed("PUT", "/api/auth/password", payload)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return readAPIError(resp)
+	}
+	return nil
+}
+
 func (c *Client) ListBookmarks(search, tag string, skip, limit int) ([]Bookmark, error) {
 	params := url.Values{}
 	if search != "" {
