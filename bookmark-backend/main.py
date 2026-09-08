@@ -1,11 +1,13 @@
 from fastapi import FastAPI, HTTPException, Depends, Query, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, field_validator
 from typing import List, Optional
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 import os
+import hashlib
+import secrets
 
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Table, ForeignKey, or_
 from sqlalchemy.orm import sessionmaker, declarative_base, Session, relationship
@@ -47,6 +49,18 @@ class UserDB(Base):
     hashed_password = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     bookmarks = relationship("BookmarkDB", back_populates="user")
+
+class BotTokenDB(Base):
+    __tablename__ = "bot_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    token_hash = Column(String(64), unique=True, nullable=False, index=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
+    expires_at = Column(DateTime, nullable=True)
+    revoked_at = Column(DateTime, nullable=True)
+    last_used_at = Column(DateTime, nullable=True)
+
 
 class TagDB(Base):
     __tablename__ = "tags"
@@ -98,6 +112,16 @@ class UserLoginRequest(BaseModel):
     username: str
     password: str
 
+class BotTokenRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    expires_in_days: Optional[int] = Field(default=None, ge=1, le=3650)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def trim_name(cls, value):
+        return value.strip() if isinstance(value, str) else value
+
+
 class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
@@ -124,6 +148,9 @@ def get_db():
         db.close()
 
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> UserDB:
+    # Management/read operations require a browser/CLI session, not a bot token.
+    if request.headers.get("Authorization") is not None:
+        raise HTTPException(status_code=401, detail="Session login required")
     token = request.cookies.get("access_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -138,6 +165,55 @@ def get_current_user(request: Request, db: Session = Depends(get_db)) -> UserDB:
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
     return user
+
+BOT_TOKEN_PREFIX = "bkt_"
+BOT_TOKEN_SCOPE = "bookmarks:create"
+
+
+def hash_bot_token(token: str) -> str:
+    # Tokens have 256 bits of random entropy, so a fast cryptographic hash is safe.
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def get_bookmark_creator(request: Request, db: Session = Depends(get_db)) -> UserDB:
+    authorization = request.headers.get("Authorization")
+    if authorization is not None:
+        scheme, separator, token = authorization.partition(" ")
+        if not separator or scheme.lower() != "bearer" or not token:
+            raise HTTPException(status_code=401, detail="Invalid bot token")
+    else:
+        token = request.cookies.get("access_token", "")
+        if not token.startswith(BOT_TOKEN_PREFIX):
+            return get_current_user(request, db)
+
+    if not token.startswith(BOT_TOKEN_PREFIX) or len(token) != 47:
+        raise HTTPException(status_code=401, detail="Invalid bot token")
+    stored = db.query(BotTokenDB).filter(
+        BotTokenDB.token_hash == hash_bot_token(token)
+    ).first()
+    now = datetime.now(timezone.utc)
+    if (stored is None or stored.revoked_at is not None
+            or (stored.expires_at is not None and as_utc(stored.expires_at) <= now)):
+        raise HTTPException(status_code=401, detail="Invalid bot token")
+    user = db.query(UserDB).filter(UserDB.id == stored.user_id).first()
+    if user is None:
+        raise HTTPException(status_code=401, detail="Invalid bot token")
+    stored.last_used_at = now
+    db.commit()
+    return user
+
+
+def serialize_bot_token(token: BotTokenDB) -> dict:
+    return {
+        "id": token.id,
+        "name": token.name,
+        "scope": BOT_TOKEN_SCOPE,
+        "created_at": as_utc(token.created_at),
+        "expires_at": as_utc(token.expires_at),
+        "revoked_at": as_utc(token.revoked_at),
+        "last_used_at": as_utc(token.last_used_at),
+    }
+
 
 def fetch_bookmark_metadata(url: str) -> dict:
     headers = {
@@ -215,6 +291,60 @@ async def login(request: UserLoginRequest, response: Response, db: Session = Dep
     return {"id": user.id, "username": user.username, "created_at": as_utc(user.created_at)}
 
 
+@app.post("/api/auth/bot-tokens", status_code=201)
+async def create_bot_token(
+    request: BotTokenRequest,
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
+):
+    raw_token = BOT_TOKEN_PREFIX + secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    stored = BotTokenDB(
+        user_id=current_user.id,
+        name=request.name,
+        token_hash=hash_bot_token(raw_token),
+        created_at=now,
+        expires_at=(now + timedelta(days=request.expires_in_days)
+                    if request.expires_in_days is not None else None),
+    )
+    db.add(stored)
+    db.commit()
+    db.refresh(stored)
+    response.headers["Cache-Control"] = "no-store"
+    return {**serialize_bot_token(stored), "token": raw_token}
+
+
+@app.get("/api/auth/bot-tokens")
+async def list_bot_tokens(
+    response: Response,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
+):
+    response.headers["Cache-Control"] = "no-store"
+    tokens = db.query(BotTokenDB).filter(
+        BotTokenDB.user_id == current_user.id
+    ).order_by(BotTokenDB.id.desc()).all()
+    return [serialize_bot_token(token) for token in tokens]
+
+
+@app.delete("/api/auth/bot-tokens/{token_id}", status_code=204)
+async def revoke_bot_token(
+    token_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserDB = Depends(get_current_user),
+):
+    token = db.query(BotTokenDB).filter(
+        BotTokenDB.id == token_id, BotTokenDB.user_id == current_user.id
+    ).first()
+    if token is None:
+        raise HTTPException(status_code=404, detail="Bot token not found")
+    if token.revoked_at is None:
+        token.revoked_at = datetime.now(timezone.utc)
+        db.commit()
+    return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+
 @app.post("/api/auth/logout")
 async def logout(response: Response):
     response.delete_cookie(key="access_token")
@@ -282,7 +412,7 @@ async def get_bookmarks(
 async def create_bookmark(
     request: BookmarkRequest,
     db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
+    current_user: UserDB = Depends(get_bookmark_creator),
 ):
     existing = db.query(BookmarkDB).filter(
         BookmarkDB.url == request.url,
