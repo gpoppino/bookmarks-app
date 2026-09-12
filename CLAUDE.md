@@ -49,6 +49,9 @@ npm run build
 
 # Lint
 npm run lint
+
+# Tests
+npm test
 ```
 
 App runs at `http://localhost:3000`. Requires the backend to be running first.

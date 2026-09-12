@@ -68,3 +68,13 @@ npm run build
 ```
 
 Output will be in the `dist/` folder.
+
+## Checks
+
+```bash
+npm run lint
+npm test
+npm run build
+```
+
+The tests run with Vitest and do not require a live backend.
