@@ -26,11 +26,14 @@ go build -o bookmarks .
 ### Authentication
 
 ```bash
-# Register a new account
-./bookmarks register -n <username> -p <password>
+# Register a new account (password is prompted with hidden input)
+./bookmarks register -n <username>
 
-# Log in (saves session token to ~/.config/bookmarks-cli/session)
-./bookmarks login -n <username> -p <password>
+# Log in (password is prompted; saves session token locally)
+./bookmarks login -n <username>
+
+# Change password (prompts for current, new, and confirmation)
+./bookmarks change-password
 
 # Show current user
 ./bookmarks me
@@ -39,7 +42,27 @@ go build -o bookmarks .
 ./bookmarks logout
 ```
 
-Username and password flags are optional — the CLI will prompt if omitted. Password input is hidden.
+The username flag is optional for interactive login and registration. Passwords
+are never accepted as command-line values because arguments can leak through
+shell history, logs, scripts, and process inspection. Interactive password input
+is hidden.
+
+For non-interactive use, pass `--password-stdin` and always supply `--username`:
+
+```bash
+# login and register read one password line
+printf '%s\n' "$PASSWORD" | ./bookmarks login --username alice --password-stdin
+printf '%s\n' "$PASSWORD" | ./bookmarks register --username alice --password-stdin
+
+# change-password reads current and new passwords from two lines
+printf '%s\n%s\n' "$CURRENT_PASSWORD" "$NEW_PASSWORD" | ./bookmarks change-password --password-stdin
+```
+
+Do not put literal passwords in `echo` or `printf` commands, scripts, or shell
+history. Populate the shell variables without echoing them (for example with
+`read -s`) or pipe values directly from a trusted secret manager. Do not export
+them unless necessary, and unset them promptly. Stdin mode does not confirm the
+new password, so automated callers must validate their two-line input.
 
 ### Bookmarks
 
