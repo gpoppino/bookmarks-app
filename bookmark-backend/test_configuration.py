@@ -11,14 +11,31 @@ BACKEND_DIRECTORY = Path(__file__).resolve().parent
 
 
 class SecretKeyConfigurationTests(unittest.TestCase):
-    def import_backend(self, expression="main.SECRET_KEY", **environment):
+    def import_backend(
+        self,
+        expression="main.SECRET_KEY",
+        systemd_credential=None,
+        **environment,
+    ):
         process_environment = os.environ.copy()
         process_environment.pop("APP_ENV", None)
         process_environment.pop("SECRET_KEY", None)
+        process_environment.pop("CREDENTIALS_DIRECTORY", None)
         process_environment.update(environment)
         process_environment["PYTHONPATH"] = str(BACKEND_DIRECTORY)
 
         with tempfile.TemporaryDirectory() as directory:
+            if systemd_credential is not None:
+                credentials_directory = Path(directory) / "credentials"
+                credentials_directory.mkdir()
+                (credentials_directory / "secret_key").write_text(
+                    systemd_credential,
+                    encoding="utf-8",
+                )
+                process_environment["CREDENTIALS_DIRECTORY"] = str(
+                    credentials_directory
+                )
+
             return subprocess.run(
                 [sys.executable, "-c", f"import main; print({expression})"],
                 cwd=directory,
@@ -55,6 +72,25 @@ class SecretKeyConfigurationTests(unittest.TestCase):
         result = self.import_backend(APP_ENV="production", SECRET_KEY=secret_key)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), secret_key)
+
+    def test_systemd_credential_allows_production_startup(self):
+        secret_key = "a-systemd-credential-with-more-than-32-characters\n"
+        result = self.import_backend(
+            APP_ENV="production",
+            systemd_credential=secret_key,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), secret_key.strip())
+
+    def test_systemd_credential_takes_precedence_over_environment(self):
+        credential = "the-systemd-credential-is-the-selected-secret-key"
+        result = self.import_backend(
+            APP_ENV="production",
+            SECRET_KEY="the-environment-variable-is-not-the-selected-key",
+            systemd_credential=credential,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), credential)
 
     def test_explicit_development_allows_the_local_key(self):
         result = self.import_backend(APP_ENV="development")

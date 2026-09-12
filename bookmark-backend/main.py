@@ -9,6 +9,7 @@ import os
 import hashlib
 import logging
 import secrets
+from pathlib import Path
 from urllib.parse import urlparse
 
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Table, ForeignKey, or_
@@ -45,9 +46,27 @@ MIN_SECRET_KEY_LENGTH = 32
 ENVIRONMENT = os.environ.get("APP_ENV", "production").strip().lower()
 
 
+def read_secret_key() -> Optional[str]:
+    """Read the JWT signing key from systemd credentials or the environment."""
+    credentials_directory = os.environ.get("CREDENTIALS_DIRECTORY")
+
+    if credentials_directory:
+        credential_path = Path(credentials_directory) / "secret_key"
+        try:
+            return credential_path.read_text(encoding="utf-8").rstrip("\r\n")
+        except FileNotFoundError:
+            pass
+        except (OSError, UnicodeError) as error:
+            raise RuntimeError(
+                f"Unable to read systemd credential: {credential_path}"
+            ) from error
+
+    return os.environ.get("SECRET_KEY")
+
+
 def load_secret_key() -> str:
     """Load a JWT signing key, allowing a known key only in explicit development."""
-    secret_key = os.environ.get("SECRET_KEY")
+    secret_key = read_secret_key()
 
     if ENVIRONMENT == DEVELOPMENT_ENVIRONMENT:
         return secret_key or LOCAL_DEVELOPMENT_SECRET_KEY
