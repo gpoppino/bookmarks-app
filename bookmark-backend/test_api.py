@@ -5,7 +5,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -153,6 +153,70 @@ class AuthenticationAndBookmarkIntegrationTests(unittest.TestCase):
             self.client.delete(f"/api/bookmarks/{bookmark['id']}").status_code,
             404,
         )
+
+    def test_automatic_tags_merge_with_manual_tags_and_reuse_user_vocabulary(self):
+        self.assertEqual(self.register("alice").status_code, 201)
+        self.assertEqual(self.login("alice").status_code, 200)
+        self.assertEqual(
+            self.create_bookmark(
+                "https://existing.test", ["python", "fastapi"]
+            ).status_code,
+            201,
+        )
+
+        suggester = Mock(enabled=True)
+        suggester.suggest.return_value = [
+            "new-one",
+            "#Python",
+            "new-two",
+            "new-three",
+            "FastAPI",
+        ]
+        with patch.object(self.api, "tag_suggester", suggester):
+            created = self.create_bookmark(
+                "https://automatic.test", ["manual", "python"]
+            )
+
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(
+            created.json()["tags"],
+            ["manual", "python", "fastapi", "new-one", "new-two"],
+        )
+        context = suggester.suggest.call_args.args[0]
+        self.assertEqual(context.domain, "automatic.test")
+        self.assertEqual(context.existing_tags, ("fastapi", "python"))
+
+    def test_automatic_tagging_failure_does_not_fail_bookmark_creation(self):
+        self.assertEqual(self.register("alice").status_code, 201)
+        self.assertEqual(self.login("alice").status_code, 200)
+        suggester = Mock(enabled=True)
+        suggester.suggest.side_effect = TimeoutError("provider timeout")
+
+        with patch.object(self.api, "tag_suggester", suggester):
+            created = self.create_bookmark(tags=["manual"])
+
+        self.assertEqual(created.status_code, 201, created.text)
+        self.assertEqual(created.json()["tags"], ["manual"])
+
+    def test_only_the_current_users_tag_vocabulary_is_sent(self):
+        self.assertEqual(self.register("alice").status_code, 201)
+        self.assertEqual(self.login("alice").status_code, 200)
+        self.assertEqual(
+            self.create_bookmark(tags=["alice-private"]).status_code,
+            201,
+        )
+        self.client.cookies.clear()
+        self.assertEqual(self.register("bob").status_code, 201)
+        self.assertEqual(self.login("bob").status_code, 200)
+
+        suggester = Mock(enabled=True)
+        suggester.suggest.return_value = []
+        with patch.object(self.api, "tag_suggester", suggester):
+            created = self.create_bookmark("https://bob.test")
+
+        self.assertEqual(created.status_code, 201, created.text)
+        context = suggester.suggest.call_args.args[0]
+        self.assertEqual(context.existing_tags, ())
 
     def test_duplicate_bookmark_is_rejected_per_user(self):
         self.assertEqual(self.register("alice").status_code, 201)

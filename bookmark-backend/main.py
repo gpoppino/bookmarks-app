@@ -7,13 +7,24 @@ from bs4 import BeautifulSoup
 from datetime import datetime, timedelta, timezone
 import os
 import hashlib
+import logging
 import secrets
+from pathlib import Path
+from urllib.parse import urlparse
 
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Table, ForeignKey, or_
 from sqlalchemy.orm import sessionmaker, declarative_base, Session, relationship
 
 from jose import JWTError, jwt
 import bcrypt as bcrypt_lib
+from starlette.concurrency import run_in_threadpool
+
+from tagging import (
+    MAX_EXISTING_TAGS,
+    TaggingContext,
+    build_tag_suggester,
+    merge_tags,
+)
 
 # ==========================================
 # DATABASE SETUP
@@ -35,9 +46,27 @@ MIN_SECRET_KEY_LENGTH = 32
 ENVIRONMENT = os.environ.get("APP_ENV", "production").strip().lower()
 
 
+def read_secret_key() -> Optional[str]:
+    """Read the JWT signing key from systemd credentials or the environment."""
+    credentials_directory = os.environ.get("CREDENTIALS_DIRECTORY")
+
+    if credentials_directory:
+        credential_path = Path(credentials_directory) / "secret_key"
+        try:
+            return credential_path.read_text(encoding="utf-8").rstrip("\r\n")
+        except FileNotFoundError:
+            pass
+        except (OSError, UnicodeError) as error:
+            raise RuntimeError(
+                f"Unable to read systemd credential: {credential_path}"
+            ) from error
+
+    return os.environ.get("SECRET_KEY")
+
+
 def load_secret_key() -> str:
     """Load a JWT signing key, allowing a known key only in explicit development."""
-    secret_key = os.environ.get("SECRET_KEY")
+    secret_key = read_secret_key()
 
     if ENVIRONMENT == DEVELOPMENT_ENVIRONMENT:
         return secret_key or LOCAL_DEVELOPMENT_SECRET_KEY
@@ -70,6 +99,8 @@ SESSION_COOKIE_SAMESITE = "lax"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = ENVIRONMENT != DEVELOPMENT_ENVIRONMENT
 SESSION_COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+logger = logging.getLogger(__name__)
+tag_suggester = build_tag_suggester()
 
 # ==========================================
 # MODELS
@@ -300,6 +331,53 @@ def serialize_bookmark(b: BookmarkDB) -> dict:
         "tags": [t.name for t in b.tags]
     }
 
+
+def get_user_tag_names(db: Session, user_id: int) -> list[str]:
+    rows = (
+        db.query(TagDB.name)
+        .join(bookmark_tag_association, TagDB.id == bookmark_tag_association.c.tag_id)
+        .join(
+            BookmarkDB,
+            BookmarkDB.id == bookmark_tag_association.c.bookmark_id,
+        )
+        .filter(BookmarkDB.user_id == user_id)
+        .distinct()
+        .order_by(TagDB.name)
+        .limit(MAX_EXISTING_TAGS)
+        .all()
+    )
+    return [name for (name,) in rows]
+
+
+async def get_automatic_tags(
+    metadata: dict,
+    existing_tags: list[str],
+) -> list[str]:
+    if not tag_suggester.enabled:
+        return []
+    context = TaggingContext(
+        domain=(urlparse(metadata["url"]).hostname or "").lower(),
+        title=metadata["title"],
+        description=metadata["description"],
+        existing_tags=tuple(existing_tags),
+    )
+    try:
+        return await run_in_threadpool(tag_suggester.suggest, context)
+    except Exception as error:
+        logger.warning(
+            "Automatic tagging failed (%s); saving bookmark without suggestions",
+            type(error).__name__,
+        )
+        return []
+
+
+def attach_tags(db: Session, bookmark: BookmarkDB, tag_names: list[str]) -> None:
+    for clean_tag in tag_names:
+        db_tag = db.query(TagDB).filter(TagDB.name == clean_tag).first()
+        if not db_tag:
+            db_tag = TagDB(name=clean_tag)
+        bookmark.tags.append(db_tag)
+
 # ==========================================
 # AUTH ENDPOINTS
 # ==========================================
@@ -478,14 +556,10 @@ async def create_bookmark(
         user_id=current_user.id,
     )
 
-    for tag_name in request.tags:
-        clean_tag = tag_name.strip().lower()
-        if not clean_tag:
-            continue
-        db_tag = db.query(TagDB).filter(TagDB.name == clean_tag).first()
-        if not db_tag:
-            db_tag = TagDB(name=clean_tag)
-        new_bookmark.tags.append(db_tag)
+    existing_tags = get_user_tag_names(db, current_user.id)
+    suggested_tags = await get_automatic_tags(metadata, existing_tags)
+    tag_names = merge_tags(request.tags, suggested_tags, existing_tags)
+    attach_tags(db, new_bookmark, tag_names)
 
     db.add(new_bookmark)
     db.commit()
@@ -518,14 +592,7 @@ async def update_bookmark(
 
     if request.tags is not None:
         bookmark.tags = []
-        for tag_name in request.tags:
-            clean_tag = tag_name.strip().lower()
-            if not clean_tag:
-                continue
-            db_tag = db.query(TagDB).filter(TagDB.name == clean_tag).first()
-            if not db_tag:
-                db_tag = TagDB(name=clean_tag)
-            bookmark.tags.append(db_tag)
+        attach_tags(db, bookmark, merge_tags(request.tags, [], []))
 
     db.commit()
     db.refresh(bookmark)

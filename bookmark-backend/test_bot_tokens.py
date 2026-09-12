@@ -6,7 +6,7 @@ from pathlib import Path
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
 
@@ -186,6 +186,15 @@ class BotTokenTests(unittest.TestCase):
     def test_existing_session_can_still_save(self):
         self.assertEqual(self.client.post("/api/bookmarks",
             json={"url": "https://example.dev"}).status_code, 201)
+
+    def test_bot_token_creation_receives_automatic_tags(self):
+        token = self.mint().json()["token"]
+        suggester = Mock(enabled=True)
+        suggester.suggest.return_value = ["automation"]
+        with patch.object(self.api, "tag_suggester", suggester):
+            response = self.save(token)
+        self.assertEqual(response.status_code, 201, response.text)
+        self.assertEqual(response.json()["tags"], ["automation"])
 
     def test_login_cookie_policy_in_development_and_production(self):
         password = self.set_login_password()
