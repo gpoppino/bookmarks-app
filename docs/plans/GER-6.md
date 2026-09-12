@@ -8,7 +8,7 @@ Make the login session cookie safe by default in deployed environments while
 preserving an explicit local HTTP development mode. Login and logout must use
 the same cookie scope so logout reliably removes the browser cookie.
 
-## Current behavior
+## Original behavior
 
 - `POST /api/auth/login` sets `access_token` with `HttpOnly`, `SameSite=Lax`, a
   30-day `Max-Age`, and `Secure=False`.
@@ -42,8 +42,8 @@ instead of weakening this cookie by default.
    - Reuse the `APP_ENV=development` convention introduced by GER-5/PR #2.
    - Treat an unset or differently named environment as deployed and therefore
      secure by default.
-   - If GER-6 is implemented before PR #2 merges, rebase after it merges rather
-     than introducing a second environment convention.
+   - GER-6 was rebased after PR #2 merged rather than introducing a second
+     environment convention.
 
 2. Define one session-cookie configuration in `bookmark-backend/main.py`.
    - Add constants for the cookie name, path, SameSite mode, and max age.
@@ -88,7 +88,7 @@ instead of weakening this cookie by default.
 
 ## Verification
 
-Run from `bookmark-backend/` after PR #2 is available:
+Run from `bookmark-backend/`:
 
 ```sh
 APP_ENV=development python -m unittest -v

@@ -11,7 +11,7 @@ BACKEND_DIRECTORY = Path(__file__).resolve().parent
 
 
 class SecretKeyConfigurationTests(unittest.TestCase):
-    def import_backend(self, **environment):
+    def import_backend(self, expression="main.SECRET_KEY", **environment):
         process_environment = os.environ.copy()
         process_environment.pop("APP_ENV", None)
         process_environment.pop("SECRET_KEY", None)
@@ -20,7 +20,7 @@ class SecretKeyConfigurationTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as directory:
             return subprocess.run(
-                [sys.executable, "-c", "import main; print(main.SECRET_KEY)"],
+                [sys.executable, "-c", f"import main; print({expression})"],
                 cwd=directory,
                 env=process_environment,
                 capture_output=True,
@@ -60,6 +60,24 @@ class SecretKeyConfigurationTests(unittest.TestCase):
         result = self.import_backend(APP_ENV="development")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "dev-secret-key-change-in-production")
+
+    def test_session_cookie_secure_flag_is_environment_aware(self):
+        development = self.import_backend(
+            expression="main.SESSION_COOKIE_SECURE",
+            APP_ENV="development",
+        )
+        self.assertEqual(development.returncode, 0, development.stderr)
+        self.assertEqual(development.stdout.strip(), "False")
+
+        for environment in ("production", "staging"):
+            with self.subTest(environment=environment):
+                deployed = self.import_backend(
+                    expression="main.SESSION_COOKIE_SECURE",
+                    APP_ENV=environment,
+                    SECRET_KEY="a-strong-random-production-key-with-32-chars",
+                )
+                self.assertEqual(deployed.returncode, 0, deployed.stderr)
+                self.assertEqual(deployed.stdout.strip(), "True")
 
 
 if __name__ == "__main__":
