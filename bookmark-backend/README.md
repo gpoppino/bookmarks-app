@@ -78,6 +78,29 @@ GET /api/bookmarks?search=api&tag=tutorial&skip=0&limit=20
 
 SQLite database is auto-created as `bookmarks.db` in the project root on first run. No migration step needed.
 
+## Automatic tagging with OpenAI
+
+Automatic tagging is disabled by default. When enabled, bookmark creation sends
+the normalized domain, scraped title and description, and at most 100 tags used
+by the current user to OpenAI. The response is not stored by the Responses API.
+Up to five suggestions are merged with manual tags; manual tags are always
+preserved, existing tags are preferred, and at most two new tag names are added.
+
+Configure the backend with environment variables:
+
+```sh
+AUTO_TAGGING_ENABLED=true
+OPENAI_API_KEY='<value-from-your-secret-manager>'
+OPENAI_TAGGING_MODEL=gpt-5.4-nano                 # optional default
+OPENAI_TAGGING_TIMEOUT_SECONDS=4                  # optional default
+```
+
+Keep `OPENAI_API_KEY` in deployment secret management and never commit it.
+Startup fails when automatic tagging is enabled without a key or with invalid
+configuration. Runtime provider errors and timeouts fail open: the bookmark is
+still saved with its manual tags. URL edits do not trigger retagging, and
+existing bookmarks are not backfilled in this version.
+
 ## Session cookie policy
 
 Successful login stores the JWT in an `access_token` cookie with the following

@@ -6,3 +6,4 @@ requests==2.31.0
 beautifulsoup4==4.12.3
 python-jose[cryptography]==3.3.0
 bcrypt==5.0.0
+openai==3.13.0
