@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Backend tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bookmark-backend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: |
+            bookmark-backend/requirements.txt
+            bookmark-backend/requirements-dev.txt
+      - run: pip install -r requirements-dev.txt
+      - run: python -m unittest -v
+        env:
+          APP_ENV: development
+
+  web:
+    name: Web lint, tests, and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bookmark-web-client
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: bookmark-web-client/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  cli:
+    name: CLI tests and build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bookmark-cli-client
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: bookmark-cli-client/go.mod
+          cache-dependency-path: bookmark-cli-client/go.sum
+      - run: go test ./...
+      - run: go build -o /tmp/bookmarks-cli .
