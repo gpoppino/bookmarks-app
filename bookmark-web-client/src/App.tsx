@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AddBookmarkForm } from './components/AddBookmarkForm';
 import { BookmarkGallery } from './components/BookmarkGallery';
+import { PaginationControls } from './components/PaginationControls';
 import { SearchBar } from './components/SearchBar';
 import { useBookmarks } from './hooks/useBookmarks';
 import { useAuth } from './context/AuthContext';
@@ -14,10 +15,20 @@ export default function App() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
 
-  const { bookmarks, loading, error, addBookmark, removeBookmark, replaceBookmark } = useBookmarks({
-    search,
-    selectedTag,
-  });
+  const {
+    bookmarks,
+    loading,
+    error,
+    page,
+    hasPreviousPage,
+    hasNextPage,
+    previousPage,
+    nextPage,
+    addBookmark,
+    removeBookmark,
+    replaceBookmark,
+    refetch,
+  } = useBookmarks({ search, selectedTag });
 
   const handleDelete = async (id: number) => {
     removeBookmark(id); // Optimistic update
@@ -25,6 +36,8 @@ export default function App() {
       await api.deleteBookmark(id);
     } catch (err) {
       console.error('Failed to delete bookmark on server:', err);
+    } finally {
+      await refetch();
     }
   };
 
@@ -73,7 +86,7 @@ export default function App() {
               onClearTag={() => setSelectedTag(null)}
             />
             <span className="bookmark-count">
-              {!loading && `${bookmarks.length} bookmark${bookmarks.length !== 1 ? 's' : ''}`}
+              {!loading && `Page ${page + 1} · ${bookmarks.length} bookmark${bookmarks.length !== 1 ? 's' : ''}`}
             </span>
           </div>
 
@@ -87,6 +100,14 @@ export default function App() {
               setSelectedTag(tag);
               setSearch('');
             }}
+          />
+          <PaginationControls
+            page={page}
+            hasPreviousPage={hasPreviousPage}
+            hasNextPage={hasNextPage}
+            loading={loading}
+            onPrevious={previousPage}
+            onNext={nextPage}
           />
         </div>
       </main>

@@ -574,6 +574,46 @@ body {
 
 .gallery-error { color: var(--red); }
 
+/* ── Pagination ───────────────────────────────────── */
+.pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.pagination-button {
+  min-width: 104px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-2);
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  padding: 8px 14px;
+  transition: border-color .15s, color .15s;
+}
+
+.pagination-button:hover:not(:disabled) {
+  border-color: var(--accent-dim);
+  color: var(--accent);
+}
+
+.pagination-button:disabled {
+  cursor: not-allowed;
+  opacity: .4;
+}
+
+.pagination-page {
+  color: var(--text-3);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-width: 56px;
+  text-align: center;
+}
+
 /* ── Skeletons ────────────────────────────────────── */
 .skeleton-grid {
   display: grid;
