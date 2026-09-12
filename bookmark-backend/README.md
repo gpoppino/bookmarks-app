@@ -20,11 +20,14 @@ source venv/bin/activate   # On Windows: venv\Scripts\activate
 # 2. Install dependencies
 pip install -r requirements.txt
 
-# 3. Start the development server
-uvicorn main:app --reload
+# 3. Start the development server using the explicit local-development mode
+APP_ENV=development uvicorn main:app --reload
 ```
 
 The API will be running at **http://127.0.0.1:8000**
+
+`APP_ENV=development` is the only mode that permits the built-in local JWT
+signing key. Do not use this mode for a deployed instance.
 
 ## Interactive Docs
 
@@ -148,6 +151,27 @@ separate token per bot so revocation can target one installation.
 
 ### Deployment and tests
 
+Before starting a deployed backend, provide a unique, randomly generated
+`SECRET_KEY` through the deployment platform's secret/environment-variable
+configuration. The key must contain at least 32 characters. For example, generate
+one without committing it to the repository:
+
+```sh
+python -c 'import secrets; print(secrets.token_urlsafe(48))'
+```
+
+Configure the generated value as `SECRET_KEY`, then start the service with
+`APP_ENV=production` (or leave `APP_ENV` unset; production-safe validation is the
+default):
+
+```sh
+APP_ENV=production SECRET_KEY='<value-from-your-secret-manager>' uvicorn main:app
+```
+
+Startup fails before serving requests when the secret is missing, shorter than
+32 characters, or equal to the built-in development key. Rotating this value
+invalidates existing login JWTs, so users will need to log in again.
+
 Deploy the updated `main.py` and restart the backend. Startup's existing
 `Base.metadata.create_all()` adds the `bot_tokens` table and indexes to an
 existing SQLite database without changing user/bookmark tables. Back up the
@@ -156,7 +180,7 @@ bot tokens; retain a normal login path when rolling back.
 
 ```sh
 pip install -r requirements-dev.txt
-python -m unittest -v test_bot_tokens
+APP_ENV=development python -m unittest -v
 ```
 
 Tests use a temporary SQLite database and mocked metadata scraping; they do not

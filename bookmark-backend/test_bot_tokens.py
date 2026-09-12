@@ -17,7 +17,8 @@ class BotTokenTests(unittest.TestCase):
         previous = Path.cwd()
         try:
             os.chdir(cls.directory.name)
-            cls.api = importlib.import_module("main")
+            with patch.dict(os.environ, {"APP_ENV": "development"}):
+                cls.api = importlib.import_module("main")
             # Connect while cwd still points at the disposable database directory.
             cls.api.engine.connect().close()
         finally:
