@@ -29,7 +29,38 @@ Base = declarative_base()
 # ==========================================
 # AUTH CONFIG
 # ==========================================
-SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key-change-in-production")
+DEVELOPMENT_ENVIRONMENT = "development"
+LOCAL_DEVELOPMENT_SECRET_KEY = "dev-secret-key-change-in-production"
+MIN_SECRET_KEY_LENGTH = 32
+
+
+def load_secret_key() -> str:
+    """Load a JWT signing key, allowing a known key only in explicit development."""
+    environment = os.environ.get("APP_ENV", "production").strip().lower()
+    secret_key = os.environ.get("SECRET_KEY")
+
+    if environment == DEVELOPMENT_ENVIRONMENT:
+        return secret_key or LOCAL_DEVELOPMENT_SECRET_KEY
+
+    if not secret_key or not secret_key.strip():
+        raise RuntimeError(
+            "SECRET_KEY is required outside development. "
+            "Set APP_ENV=development only for local development."
+        )
+    if len(secret_key) < MIN_SECRET_KEY_LENGTH:
+        raise RuntimeError(
+            f"SECRET_KEY must contain at least {MIN_SECRET_KEY_LENGTH} characters "
+            "outside development."
+        )
+    if secret_key == LOCAL_DEVELOPMENT_SECRET_KEY:
+        raise RuntimeError(
+            "The local development SECRET_KEY cannot be used outside development."
+        )
+
+    return secret_key
+
+
+SECRET_KEY = load_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
 

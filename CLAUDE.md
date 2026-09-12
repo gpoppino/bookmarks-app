@@ -27,7 +27,7 @@ source venv/bin/activate
 pip install -r requirements.txt
 
 # Run dev server
-uvicorn main:app --reload
+APP_ENV=development uvicorn main:app --reload
 ```
 
 API runs at `http://127.0.0.1:8000`. Swagger docs at `http://127.0.0.1:8000/docs`. SQLite DB (`bookmarks.db`) is auto-created on first run.
