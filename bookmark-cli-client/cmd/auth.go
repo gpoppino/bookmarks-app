@@ -3,9 +3,9 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
-	"syscall"
 
 	"github.com/gpoppino/bookmarks-cli/internal"
 	"github.com/spf13/cobra"
@@ -23,8 +23,12 @@ func promptString(label string) (string, error) {
 }
 
 func promptPassword(label string) (string, error) {
+	stdin := int(os.Stdin.Fd())
+	if !term.IsTerminal(stdin) {
+		return "", fmt.Errorf("interactive password prompt requires a terminal; use --password-stdin for explicit non-interactive input")
+	}
 	fmt.Printf("%s: ", label)
-	pw, err := term.ReadPassword(syscall.Stdin)
+	pw, err := term.ReadPassword(stdin)
 	fmt.Println()
 	if err != nil {
 		return "", err
@@ -32,15 +36,44 @@ func promptPassword(label string) (string, error) {
 	return string(pw), nil
 }
 
-func resolveCredentials(username, password string) (string, string, error) {
+func readPasswords(reader io.Reader, count int) ([]string, error) {
+	scanner := bufio.NewScanner(reader)
+	passwords := make([]string, 0, count)
+	for len(passwords) < count {
+		if !scanner.Scan() {
+			if err := scanner.Err(); err != nil {
+				return nil, fmt.Errorf("failed to read password from stdin: %w", err)
+			}
+			return nil, fmt.Errorf("expected %d password line(s) on stdin, received %d", count, len(passwords))
+		}
+		password := scanner.Text()
+		if password == "" {
+			return nil, fmt.Errorf("password line %d on stdin is empty", len(passwords)+1)
+		}
+		passwords = append(passwords, password)
+	}
+	return passwords, nil
+}
+
+func resolveCredentials(username string, passwordStdin bool, stdin io.Reader) (string, string, error) {
 	var err error
+	if passwordStdin && username == "" {
+		return "", "", fmt.Errorf("--username is required with --password-stdin")
+	}
 	if username == "" {
 		username, err = promptString("Username")
 		if err != nil {
 			return "", "", err
 		}
 	}
-	if password == "" {
+	var password string
+	if passwordStdin {
+		passwords, err := readPasswords(stdin, 1)
+		if err != nil {
+			return "", "", err
+		}
+		password = passwords[0]
+	} else {
 		password, err = promptPassword("Password")
 		if err != nil {
 			return "", "", err
@@ -54,9 +87,9 @@ var loginCmd = &cobra.Command{
 	Short: "Log in and save session token",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		username, _ := cmd.Flags().GetString("username")
-		password, _ := cmd.Flags().GetString("password")
+		passwordStdin, _ := cmd.Flags().GetBool("password-stdin")
 		var err error
-		username, password, err = resolveCredentials(username, password)
+		username, password, err := resolveCredentials(username, passwordStdin, os.Stdin)
 		if err != nil {
 			return err
 		}
@@ -77,9 +110,9 @@ var registerCmd = &cobra.Command{
 	Short: "Register a new user",
 	RunE: func(cmd *cobra.Command, args []string) error {
 		username, _ := cmd.Flags().GetString("username")
-		password, _ := cmd.Flags().GetString("password")
+		passwordStdin, _ := cmd.Flags().GetBool("password-stdin")
 		var err error
-		username, password, err = resolveCredentials(username, password)
+		username, password, err := resolveCredentials(username, passwordStdin, os.Stdin)
 		if err != nil {
 			return err
 		}
@@ -126,16 +159,20 @@ var changePasswordCmd = &cobra.Command{
 	Use:   "change-password",
 	Short: "Change your password",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		currentPassword, _ := cmd.Flags().GetString("current-password")
-		newPassword, _ := cmd.Flags().GetString("new-password")
-		var err error
-		if currentPassword == "" {
+		passwordStdin, _ := cmd.Flags().GetBool("password-stdin")
+		var currentPassword, newPassword string
+		if passwordStdin {
+			passwords, err := readPasswords(os.Stdin, 2)
+			if err != nil {
+				return err
+			}
+			currentPassword, newPassword = passwords[0], passwords[1]
+		} else {
+			var err error
 			currentPassword, err = promptPassword("Current password")
 			if err != nil {
 				return err
 			}
-		}
-		if newPassword == "" {
 			newPassword, err = promptPassword("New password")
 			if err != nil {
 				return err
@@ -158,13 +195,12 @@ var changePasswordCmd = &cobra.Command{
 
 func init() {
 	loginCmd.Flags().StringP("username", "n", "", "Username")
-	loginCmd.Flags().StringP("password", "p", "", "Password")
+	loginCmd.Flags().Bool("password-stdin", false, "Read password from stdin (non-interactive)")
 
 	registerCmd.Flags().StringP("username", "n", "", "Username")
-	registerCmd.Flags().StringP("password", "p", "", "Password")
+	registerCmd.Flags().Bool("password-stdin", false, "Read password from stdin (non-interactive)")
 
-	changePasswordCmd.Flags().StringP("current-password", "c", "", "Current password")
-	changePasswordCmd.Flags().StringP("new-password", "n", "", "New password")
+	changePasswordCmd.Flags().Bool("password-stdin", false, "Read current and new passwords from two stdin lines (non-interactive)")
 
 	rootCmd.AddCommand(loginCmd, registerCmd, logoutCmd, meCmd, changePasswordCmd)
 }

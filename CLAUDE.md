@@ -63,7 +63,7 @@ go build -o bookmarks .
 
 # Run
 ./bookmarks --help
-./bookmarks login -n <username> -p <password>
+./bookmarks login -n <username> # password is prompted with hidden input
 ```
 
 Default API URL: `http://localhost:8000`. Override with `--api-url` flag or `BOOKMARKS_API_URL` env var.
