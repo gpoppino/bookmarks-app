@@ -205,3 +205,7 @@ APP_ENV=development python -m unittest -v
 
 Tests use a temporary SQLite database and mocked metadata scraping; they do not
 use the live database, contact websites, or create real bookmarks.
+`test_api.py` covers the core registration, login, logout, password-change, and
+bookmark CRUD flows, including authentication failures, duplicate detection,
+and isolation between users. `test_bot_tokens.py` covers the separate bot-token
+authentication path.
