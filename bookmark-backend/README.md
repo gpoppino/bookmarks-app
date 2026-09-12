@@ -27,7 +27,8 @@ APP_ENV=development uvicorn main:app --reload
 The API will be running at **http://127.0.0.1:8000**
 
 `APP_ENV=development` is the only mode that permits the built-in local JWT
-signing key. Do not use this mode for a deployed instance.
+signing key and a session cookie without the `Secure` attribute. Do not use this
+mode for a deployed instance.
 
 ## Interactive Docs
 
@@ -76,6 +77,25 @@ GET /api/bookmarks?search=api&tag=tutorial&skip=0&limit=20
 ## Database
 
 SQLite database is auto-created as `bookmarks.db` in the project root on first run. No migration step needed.
+
+## Session cookie policy
+
+Successful login stores the JWT in an `access_token` cookie with the following
+policy:
+
+| Attribute | Value |
+|-----------|-------|
+| `HttpOnly` | Enabled, so browser JavaScript cannot read the JWT |
+| `Secure` | Enabled in every environment except explicit `APP_ENV=development` |
+| `SameSite` | `Lax`, because cross-site cookie requests are not required |
+| `Domain` | Unset, making the cookie host-only |
+| `Path` | `/`, covering every backend route |
+| Lifetime | 30 days, matching the JWT expiration |
+
+Logout expires the cookie using the same domain, path, security, and SameSite
+attributes. Production must be exposed to browsers over HTTPS or they will not
+send the `Secure` cookie. TLS may terminate at a reverse proxy as long as the
+browser-facing URL is HTTPS.
 
 ## Revocable bot tokens
 

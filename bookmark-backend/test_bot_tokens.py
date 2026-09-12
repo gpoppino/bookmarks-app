@@ -1,6 +1,7 @@
 """Run with python -m unittest -v test_bot_tokens (uses only a temporary DB)."""
 import importlib
 import os
+from http.cookies import SimpleCookie
 from pathlib import Path
 import tempfile
 import unittest
@@ -66,6 +67,18 @@ class BotTokenTests(unittest.TestCase):
         else:
             headers["Authorization"] = "Bearer " + token
         return self.client.post("/api/bookmarks", json={"url": url}, headers=headers)
+
+    def set_login_password(self, password="correct-password"):
+        with self.api.SessionLocal() as db:
+            user = db.query(self.api.UserDB).filter_by(username="alice").one()
+            user.hashed_password = self.api.hash_password(password)
+            db.commit()
+        return password
+
+    def parse_response_cookie(self, response):
+        cookies = SimpleCookie()
+        cookies.load(response.headers["set-cookie"])
+        return cookies[self.api.SESSION_COOKIE_NAME]
 
     def test_creation_stores_only_hash_and_lists_only_metadata(self):
         response = self.mint(name="  Pi  ")
@@ -173,6 +186,47 @@ class BotTokenTests(unittest.TestCase):
     def test_existing_session_can_still_save(self):
         self.assertEqual(self.client.post("/api/bookmarks",
             json={"url": "https://example.dev"}).status_code, 201)
+
+    def test_login_cookie_policy_in_development_and_production(self):
+        password = self.set_login_password()
+        for production in (False, True):
+            with self.subTest(production=production), patch.object(
+                self.api, "SESSION_COOKIE_SECURE", production
+            ):
+                self.client.cookies.clear()
+                response = self.client.post(
+                    "/api/auth/login",
+                    json={"username": "alice", "password": password},
+                )
+                self.assertEqual(response.status_code, 200, response.text)
+                cookie = self.parse_response_cookie(response)
+                self.assertTrue(bool(cookie["httponly"]))
+                self.assertEqual(bool(cookie["secure"]), production)
+                self.assertEqual(cookie["samesite"], "lax")
+                self.assertEqual(cookie["domain"], "")
+                self.assertEqual(cookie["path"], "/")
+                self.assertEqual(
+                    cookie["max-age"], str(self.api.SESSION_COOKIE_MAX_AGE)
+                )
+                if not production:
+                    self.assertEqual(self.client.get("/api/auth/me").status_code, 200)
+
+    def test_logout_deletes_cookie_with_matching_scope(self):
+        for production in (False, True):
+            with self.subTest(production=production), patch.object(
+                self.api, "SESSION_COOKIE_SECURE", production
+            ):
+                response = self.client.post("/api/auth/logout")
+                self.assertEqual(response.status_code, 200, response.text)
+                cookie = self.parse_response_cookie(response)
+                self.assertEqual(cookie.value, "")
+                self.assertTrue(bool(cookie["httponly"]))
+                self.assertEqual(bool(cookie["secure"]), production)
+                self.assertEqual(cookie["samesite"], "lax")
+                self.assertEqual(cookie["domain"], "")
+                self.assertEqual(cookie["path"], "/")
+                self.assertEqual(cookie["max-age"], "0")
+                self.assertNotEqual(cookie["expires"], "")
 
     def test_validation_and_unique_tokens(self):
         for body in ({"name": " "}, {"name": "x" * 101},

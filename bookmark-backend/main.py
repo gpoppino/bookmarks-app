@@ -32,14 +32,14 @@ Base = declarative_base()
 DEVELOPMENT_ENVIRONMENT = "development"
 LOCAL_DEVELOPMENT_SECRET_KEY = "dev-secret-key-change-in-production"
 MIN_SECRET_KEY_LENGTH = 32
+ENVIRONMENT = os.environ.get("APP_ENV", "production").strip().lower()
 
 
 def load_secret_key() -> str:
     """Load a JWT signing key, allowing a known key only in explicit development."""
-    environment = os.environ.get("APP_ENV", "production").strip().lower()
     secret_key = os.environ.get("SECRET_KEY")
 
-    if environment == DEVELOPMENT_ENVIRONMENT:
+    if ENVIRONMENT == DEVELOPMENT_ENVIRONMENT:
         return secret_key or LOCAL_DEVELOPMENT_SECRET_KEY
 
     if not secret_key or not secret_key.strip():
@@ -63,6 +63,13 @@ def load_secret_key() -> str:
 SECRET_KEY = load_secret_key()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
+SESSION_COOKIE_NAME = "access_token"
+SESSION_COOKIE_PATH = "/"
+SESSION_COOKIE_DOMAIN = None
+SESSION_COOKIE_SAMESITE = "lax"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SECURE = ENVIRONMENT != DEVELOPMENT_ENVIRONMENT
+SESSION_COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
 
 # ==========================================
 # MODELS
@@ -165,6 +172,16 @@ def hash_password(password: str) -> str:
 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt_lib.checkpw(plain.encode(), hashed.encode())
+
+def session_cookie_scope() -> dict:
+    """Return attributes that must match when setting or deleting the cookie."""
+    return {
+        "path": SESSION_COOKIE_PATH,
+        "domain": SESSION_COOKIE_DOMAIN,
+        "secure": SESSION_COOKIE_SECURE,
+        "httponly": SESSION_COOKIE_HTTPONLY,
+        "samesite": SESSION_COOKIE_SAMESITE,
+    }
 
 def create_access_token(data: dict, expires_delta: timedelta) -> str:
     to_encode = data.copy()
@@ -312,12 +329,10 @@ async def login(request: UserLoginRequest, response: Response, db: Session = Dep
         expires_delta=timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS),
     )
     response.set_cookie(
-        key="access_token",
+        key=SESSION_COOKIE_NAME,
         value=token,
-        httponly=True,
-        secure=False,
-        samesite="lax",
-        max_age=ACCESS_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        max_age=SESSION_COOKIE_MAX_AGE,
+        **session_cookie_scope(),
     )
     return {"id": user.id, "username": user.username, "created_at": as_utc(user.created_at)}
 
@@ -378,7 +393,7 @@ async def revoke_bot_token(
 
 @app.post("/api/auth/logout")
 async def logout(response: Response):
-    response.delete_cookie(key="access_token")
+    response.delete_cookie(key=SESSION_COOKIE_NAME, **session_cookie_scope())
     return {"success": True}
 
 
