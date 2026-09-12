@@ -14,24 +14,27 @@ class SecretKeyConfigurationTests(unittest.TestCase):
     def import_backend(
         self,
         expression="main.SECRET_KEY",
-        systemd_credential=None,
+        systemd_credentials=None,
         **environment,
     ):
         process_environment = os.environ.copy()
         process_environment.pop("APP_ENV", None)
         process_environment.pop("SECRET_KEY", None)
+        process_environment.pop("AUTO_TAGGING_ENABLED", None)
+        process_environment.pop("OPENAI_API_KEY", None)
         process_environment.pop("CREDENTIALS_DIRECTORY", None)
         process_environment.update(environment)
         process_environment["PYTHONPATH"] = str(BACKEND_DIRECTORY)
 
         with tempfile.TemporaryDirectory() as directory:
-            if systemd_credential is not None:
+            if systemd_credentials is not None:
                 credentials_directory = Path(directory) / "credentials"
                 credentials_directory.mkdir()
-                (credentials_directory / "secret_key").write_text(
-                    systemd_credential,
-                    encoding="utf-8",
-                )
+                for name, value in systemd_credentials.items():
+                    (credentials_directory / name).write_text(
+                        value,
+                        encoding="utf-8",
+                    )
                 process_environment["CREDENTIALS_DIRECTORY"] = str(
                     credentials_directory
                 )
@@ -77,7 +80,7 @@ class SecretKeyConfigurationTests(unittest.TestCase):
         secret_key = "a-systemd-credential-with-more-than-32-characters\n"
         result = self.import_backend(
             APP_ENV="production",
-            systemd_credential=secret_key,
+            systemd_credentials={"secret_key": secret_key},
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), secret_key.strip())
@@ -87,7 +90,34 @@ class SecretKeyConfigurationTests(unittest.TestCase):
         result = self.import_backend(
             APP_ENV="production",
             SECRET_KEY="the-environment-variable-is-not-the-selected-key",
-            systemd_credential=credential,
+            systemd_credentials={"secret_key": credential},
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), credential)
+
+    def test_openai_systemd_credential_enables_automatic_tagging(self):
+        result = self.import_backend(
+            expression="main.tag_suggester.enabled",
+            APP_ENV="production",
+            AUTO_TAGGING_ENABLED="true",
+            systemd_credentials={
+                "secret_key": "a-systemd-secret-key-with-more-than-32-characters",
+                "openai_api_key": "systemd-openai-api-key\n",
+            },
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "True")
+
+    def test_openai_systemd_credential_takes_precedence_over_environment(self):
+        credential = "systemd-openai-api-key"
+        result = self.import_backend(
+            expression='main.load_tagging_environment()["OPENAI_API_KEY"]',
+            APP_ENV="production",
+            OPENAI_API_KEY="environment-openai-api-key",
+            systemd_credentials={
+                "secret_key": "a-systemd-secret-key-with-more-than-32-characters",
+                "openai_api_key": credential,
+            },
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), credential)

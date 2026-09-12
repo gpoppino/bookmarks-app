@@ -46,22 +46,39 @@ MIN_SECRET_KEY_LENGTH = 32
 ENVIRONMENT = os.environ.get("APP_ENV", "production").strip().lower()
 
 
-def read_secret_key() -> Optional[str]:
-    """Read the JWT signing key from systemd credentials or the environment."""
+def read_systemd_credential(name: str) -> Optional[str]:
+    """Read a text credential supplied to the service by systemd."""
     credentials_directory = os.environ.get("CREDENTIALS_DIRECTORY")
 
     if credentials_directory:
-        credential_path = Path(credentials_directory) / "secret_key"
+        credential_path = Path(credentials_directory) / name
         try:
             return credential_path.read_text(encoding="utf-8").rstrip("\r\n")
         except FileNotFoundError:
             pass
         except (OSError, UnicodeError) as error:
             raise RuntimeError(
-                f"Unable to read systemd credential: {credential_path}"
+                f"Unable to read systemd credential {name!r}: {credential_path}"
             ) from error
 
+    return None
+
+
+def read_secret_key() -> Optional[str]:
+    """Read the JWT signing key from systemd credentials or the environment."""
+    credential = read_systemd_credential("secret_key")
+    if credential is not None:
+        return credential
     return os.environ.get("SECRET_KEY")
+
+
+def load_tagging_environment() -> dict[str, str]:
+    """Build tagging configuration, preferring the systemd OpenAI credential."""
+    configuration = os.environ.copy()
+    credential = read_systemd_credential("openai_api_key")
+    if credential is not None:
+        configuration["OPENAI_API_KEY"] = credential
+    return configuration
 
 
 def load_secret_key() -> str:
@@ -100,7 +117,7 @@ SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = ENVIRONMENT != DEVELOPMENT_ENVIRONMENT
 SESSION_COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
 logger = logging.getLogger(__name__)
-tag_suggester = build_tag_suggester()
+tag_suggester = build_tag_suggester(load_tagging_environment())
 
 # ==========================================
 # MODELS
