@@ -3,12 +3,19 @@ import importlib
 import os
 from http.cookies import SimpleCookie
 from pathlib import Path
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch
 
 from fastapi.testclient import TestClient
+
+
+BACKEND_MODULE_NAMES = (
+    "main", "auth_routes", "bookmark_routes", "bookmark_service", "auth",
+    "config", "database", "metadata", "models", "schemas",
+)
 
 
 class BotTokenTests(unittest.TestCase):
@@ -18,6 +25,8 @@ class BotTokenTests(unittest.TestCase):
         previous = Path.cwd()
         try:
             os.chdir(cls.directory.name)
+            for module_name in BACKEND_MODULE_NAMES:
+                sys.modules.pop(module_name, None)
             with patch.dict(os.environ, {"APP_ENV": "development"}):
                 cls.api = importlib.import_module("main")
             # Connect while cwd still points at the disposable database directory.
@@ -28,6 +37,8 @@ class BotTokenTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.api.engine.dispose()
+        for module_name in BACKEND_MODULE_NAMES:
+            sys.modules.pop(module_name, None)
         cls.directory.cleanup()
 
     def setUp(self):
@@ -39,7 +50,7 @@ class BotTokenTests(unittest.TestCase):
             db.commit()
         self.client = TestClient(self.api.app)
         self.session("alice")
-        self.metadata = patch.object(self.api, "fetch_bookmark_metadata",
+        self.metadata = patch.object(self.api.bookmark_routes, "fetch_bookmark_metadata",
                                      side_effect=lambda url: {
                                          "success": True, "url": url,
                                          "title": "Test", "description": "Test"})
@@ -180,7 +191,7 @@ class BotTokenTests(unittest.TestCase):
         self.session("alice", expired=True)
         self.assertEqual(self.client.post("/api/auth/bot-tokens", json={"name": "x"}).status_code, 401)
         self.api.engine.dispose()
-        with patch.object(self.api, "SECRET_KEY", "rotated-key"):
+        with patch.object(self.api.config, "SECRET_KEY", "rotated-key"):
             self.assertEqual(self.save(token).status_code, 201)
 
     def test_existing_session_can_still_save(self):
@@ -191,7 +202,7 @@ class BotTokenTests(unittest.TestCase):
         token = self.mint().json()["token"]
         suggester = Mock(enabled=True)
         suggester.suggest.return_value = ["automation"]
-        with patch.object(self.api, "tag_suggester", suggester):
+        with patch.object(self.api.bookmark_service, "tag_suggester", suggester):
             response = self.save(token)
         self.assertEqual(response.status_code, 201, response.text)
         self.assertEqual(response.json()["tags"], ["automation"])
@@ -200,7 +211,7 @@ class BotTokenTests(unittest.TestCase):
         password = self.set_login_password()
         for production in (False, True):
             with self.subTest(production=production), patch.object(
-                self.api, "SESSION_COOKIE_SECURE", production
+                self.api.config, "SESSION_COOKIE_SECURE", production
             ):
                 self.client.cookies.clear()
                 response = self.client.post(
@@ -223,7 +234,7 @@ class BotTokenTests(unittest.TestCase):
     def test_logout_deletes_cookie_with_matching_scope(self):
         for production in (False, True):
             with self.subTest(production=production), patch.object(
-                self.api, "SESSION_COOKIE_SECURE", production
+                self.api.config, "SESSION_COOKIE_SECURE", production
             ):
                 response = self.client.post("/api/auth/logout")
                 self.assertEqual(response.status_code, 200, response.text)

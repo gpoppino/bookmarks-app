@@ -30,6 +30,16 @@ The API will be running at **http://127.0.0.1:8000**
 signing key and a session cookie without the `Secure` attribute. Do not use this
 mode for a deployed instance.
 
+## Project layout
+
+- `main.py` creates the FastAPI app and includes the routers.
+- `config.py` and `database.py` own runtime configuration and session setup.
+- `models.py` and `schemas.py` define persistence and request models.
+- `auth.py` contains authentication helpers and dependencies.
+- `auth_routes.py` and `bookmark_routes.py` define the HTTP endpoints.
+- `bookmark_service.py`, `metadata.py`, and `tagging.py` contain application and
+  provider logic used by the routes.
+
 ## Interactive Docs
 
 FastAPI auto-generates Swagger UI. Open your browser at:

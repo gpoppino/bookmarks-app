@@ -1,654 +1,80 @@
-from fastapi import FastAPI, HTTPException, Depends, Query, Request, Response
+"""FastAPI application composition root.
+
+Compatibility re-exports keep existing scripts and tests working while implementation
+details live in focused modules.
+"""
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, field_validator
-from typing import List, Optional
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime, timedelta, timezone
-import os
-import hashlib
-import logging
-import secrets
-from pathlib import Path
-from urllib.parse import urlparse
 
-from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, Table, ForeignKey, or_
-from sqlalchemy.orm import sessionmaker, declarative_base, Session, relationship
-
-from jose import JWTError, jwt
-import bcrypt as bcrypt_lib
-from starlette.concurrency import run_in_threadpool
-
-from tagging import (
-    MAX_EXISTING_TAGS,
-    TaggingContext,
-    build_tag_suggester,
-    merge_tags,
+import bookmark_routes
+import bookmark_service
+import config
+from auth import (
+    BOT_TOKEN_PREFIX,
+    BOT_TOKEN_SCOPE,
+    as_utc,
+    create_access_token,
+    get_bookmark_creator,
+    get_current_user,
+    hash_bot_token,
+    hash_password,
+    serialize_bot_token,
+    session_cookie_scope,
+    verify_password,
+)
+from auth_routes import router as auth_router
+from bookmark_routes import router as bookmark_router
+from bookmark_service import (
+    attach_tags,
+    get_automatic_tags,
+    get_user_tag_names,
+    serialize_bookmark,
+    tag_suggester,
+)
+from config import (
+    ACCESS_TOKEN_EXPIRE_DAYS,
+    ALGORITHM,
+    ENVIRONMENT,
+    SECRET_KEY,
+    SESSION_COOKIE_DOMAIN,
+    SESSION_COOKIE_HTTPONLY,
+    SESSION_COOKIE_MAX_AGE,
+    SESSION_COOKIE_NAME,
+    SESSION_COOKIE_PATH,
+    SESSION_COOKIE_SAMESITE,
+    SESSION_COOKIE_SECURE,
+    load_secret_key,
+    load_tagging_environment,
+    read_secret_key,
+    read_systemd_credential,
+)
+from database import Base, SessionLocal, engine, get_db
+from metadata import fetch_bookmark_metadata
+from models import BookmarkDB, BotTokenDB, TagDB, UserDB, bookmark_tag_association
+from schemas import (
+    BookmarkRequest,
+    BookmarkUpdateRequest,
+    BotTokenRequest,
+    ChangePasswordRequest,
+    UserLoginRequest,
+    UserRegisterRequest,
 )
 
-# ==========================================
-# DATABASE SETUP
-# ==========================================
-SQLALCHEMY_DATABASE_URL = "sqlite:///./bookmarks.db"
-
-engine = create_engine(
-    SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}
-)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# ==========================================
-# AUTH CONFIG
-# ==========================================
-DEVELOPMENT_ENVIRONMENT = "development"
-LOCAL_DEVELOPMENT_SECRET_KEY = "dev-secret-key-change-in-production"
-MIN_SECRET_KEY_LENGTH = 32
-ENVIRONMENT = os.environ.get("APP_ENV", "production").strip().lower()
-
-
-def read_systemd_credential(name: str) -> Optional[str]:
-    """Read a text credential supplied to the service by systemd."""
-    credentials_directory = os.environ.get("CREDENTIALS_DIRECTORY")
-
-    if credentials_directory:
-        credential_path = Path(credentials_directory) / name
-        try:
-            return credential_path.read_text(encoding="utf-8").rstrip("\r\n")
-        except FileNotFoundError:
-            pass
-        except (OSError, UnicodeError) as error:
-            raise RuntimeError(
-                f"Unable to read systemd credential {name!r}: {credential_path}"
-            ) from error
-
-    return None
-
-
-def read_secret_key() -> Optional[str]:
-    """Read the JWT signing key from systemd credentials or the environment."""
-    credential = read_systemd_credential("secret_key")
-    if credential is not None:
-        return credential
-    return os.environ.get("SECRET_KEY")
-
-
-def load_tagging_environment() -> dict[str, str]:
-    """Build tagging configuration, preferring the systemd OpenAI credential."""
-    configuration = os.environ.copy()
-    credential = read_systemd_credential("openai_api_key")
-    if credential is not None:
-        configuration["OPENAI_API_KEY"] = credential
-    return configuration
-
-
-def load_secret_key() -> str:
-    """Load a JWT signing key, allowing a known key only in explicit development."""
-    secret_key = read_secret_key()
-
-    if ENVIRONMENT == DEVELOPMENT_ENVIRONMENT:
-        return secret_key or LOCAL_DEVELOPMENT_SECRET_KEY
-
-    if not secret_key or not secret_key.strip():
-        raise RuntimeError(
-            "SECRET_KEY is required outside development. "
-            "Set APP_ENV=development only for local development."
-        )
-    if len(secret_key) < MIN_SECRET_KEY_LENGTH:
-        raise RuntimeError(
-            f"SECRET_KEY must contain at least {MIN_SECRET_KEY_LENGTH} characters "
-            "outside development."
-        )
-    if secret_key == LOCAL_DEVELOPMENT_SECRET_KEY:
-        raise RuntimeError(
-            "The local development SECRET_KEY cannot be used outside development."
-        )
-
-    return secret_key
-
-
-SECRET_KEY = load_secret_key()
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_DAYS = 30
-SESSION_COOKIE_NAME = "access_token"
-SESSION_COOKIE_PATH = "/"
-SESSION_COOKIE_DOMAIN = None
-SESSION_COOKIE_SAMESITE = "lax"
-SESSION_COOKIE_HTTPONLY = True
-SESSION_COOKIE_SECURE = ENVIRONMENT != DEVELOPMENT_ENVIRONMENT
-SESSION_COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
-logger = logging.getLogger(__name__)
-tag_suggester = build_tag_suggester(load_tagging_environment())
-
-# ==========================================
-# MODELS
-# ==========================================
-bookmark_tag_association = Table(
-    'bookmark_tag', Base.metadata,
-    Column('bookmark_id', Integer, ForeignKey('bookmarks.id')),
-    Column('tag_id', Integer, ForeignKey('tags.id'))
-)
-
-class UserDB(Base):
-    __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    username = Column(String, unique=True, index=True, nullable=False)
-    hashed_password = Column(String, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    bookmarks = relationship("BookmarkDB", back_populates="user")
-
-class BotTokenDB(Base):
-    __tablename__ = "bot_tokens"
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    name = Column(String(100), nullable=False)
-    token_hash = Column(String(64), unique=True, nullable=False, index=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), nullable=False)
-    expires_at = Column(DateTime, nullable=True)
-    revoked_at = Column(DateTime, nullable=True)
-    last_used_at = Column(DateTime, nullable=True)
-
-
-class TagDB(Base):
-    __tablename__ = "tags"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True)
-
-class BookmarkDB(Base):
-    __tablename__ = "bookmarks"
-    id = Column(Integer, primary_key=True, index=True)
-    url = Column(String, index=True)
-    title = Column(String)
-    description = Column(Text)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    user_id = Column(Integer, ForeignKey('users.id'), nullable=False)
-    user = relationship("UserDB", back_populates="bookmarks")
-    tags = relationship("TagDB", secondary=bookmark_tag_association, backref="bookmarks")
 
 Base.metadata.create_all(bind=engine)
 
-# ==========================================
-# FASTAPI APP
-# ==========================================
 app = FastAPI(title="Bookmarks API", version="1.0.0")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# ==========================================
-# SCHEMAS
-# ==========================================
-class BookmarkRequest(BaseModel):
-    url: str
-    tags: List[str] = []
-
-class BookmarkUpdateRequest(BaseModel):
-    url: Optional[str] = None
-    tags: Optional[List[str]] = None
-
-class UserRegisterRequest(BaseModel):
-    username: str
-    password: str
-
-class UserLoginRequest(BaseModel):
-    username: str
-    password: str
-
-class BotTokenRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=100)
-    expires_in_days: Optional[int] = Field(default=None, ge=1, le=3650)
-
-    @field_validator("name", mode="before")
-    @classmethod
-    def trim_name(cls, value):
-        return value.strip() if isinstance(value, str) else value
-
-
-class ChangePasswordRequest(BaseModel):
-    current_password: str
-    new_password: str
-
-# ==========================================
-# HELPERS
-# ==========================================
-def hash_password(password: str) -> str:
-    return bcrypt_lib.hashpw(password.encode(), bcrypt_lib.gensalt()).decode()
-
-def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt_lib.checkpw(plain.encode(), hashed.encode())
-
-def session_cookie_scope() -> dict:
-    """Return attributes that must match when setting or deleting the cookie."""
-    return {
-        "path": SESSION_COOKIE_PATH,
-        "domain": SESSION_COOKIE_DOMAIN,
-        "secure": SESSION_COOKIE_SECURE,
-        "httponly": SESSION_COOKIE_HTTPONLY,
-        "samesite": SESSION_COOKIE_SAMESITE,
-    }
-
-def create_access_token(data: dict, expires_delta: timedelta) -> str:
-    to_encode = data.copy()
-    to_encode["exp"] = datetime.now(timezone.utc) + expires_delta
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-def get_current_user(request: Request, db: Session = Depends(get_db)) -> UserDB:
-    # Management/read operations require a browser/CLI session, not a bot token.
-    if request.headers.get("Authorization") is not None:
-        raise HTTPException(status_code=401, detail="Session login required")
-    token = request.cookies.get("access_token")
-    if not token:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-    try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        username: str = payload.get("sub")
-        if username is None:
-            raise HTTPException(status_code=401, detail="Invalid token")
-    except JWTError:
-        raise HTTPException(status_code=401, detail="Invalid token")
-    user = db.query(UserDB).filter(UserDB.username == username).first()
-    if user is None:
-        raise HTTPException(status_code=401, detail="User not found")
-    return user
-
-BOT_TOKEN_PREFIX = "bkt_"
-BOT_TOKEN_SCOPE = "bookmarks:create"
-
-
-def hash_bot_token(token: str) -> str:
-    # Tokens have 256 bits of random entropy, so a fast cryptographic hash is safe.
-    return hashlib.sha256(token.encode()).hexdigest()
-
-
-def get_bookmark_creator(request: Request, db: Session = Depends(get_db)) -> UserDB:
-    authorization = request.headers.get("Authorization")
-    if authorization is not None:
-        scheme, separator, token = authorization.partition(" ")
-        if not separator or scheme.lower() != "bearer" or not token:
-            raise HTTPException(status_code=401, detail="Invalid bot token")
-    else:
-        token = request.cookies.get("access_token", "")
-        if not token.startswith(BOT_TOKEN_PREFIX):
-            return get_current_user(request, db)
-
-    if not token.startswith(BOT_TOKEN_PREFIX) or len(token) != 47:
-        raise HTTPException(status_code=401, detail="Invalid bot token")
-    stored = db.query(BotTokenDB).filter(
-        BotTokenDB.token_hash == hash_bot_token(token)
-    ).first()
-    now = datetime.now(timezone.utc)
-    if (stored is None or stored.revoked_at is not None
-            or (stored.expires_at is not None and as_utc(stored.expires_at) <= now)):
-        raise HTTPException(status_code=401, detail="Invalid bot token")
-    user = db.query(UserDB).filter(UserDB.id == stored.user_id).first()
-    if user is None:
-        raise HTTPException(status_code=401, detail="Invalid bot token")
-    stored.last_used_at = now
-    db.commit()
-    return user
-
-
-def serialize_bot_token(token: BotTokenDB) -> dict:
-    return {
-        "id": token.id,
-        "name": token.name,
-        "scope": BOT_TOKEN_SCOPE,
-        "created_at": as_utc(token.created_at),
-        "expires_at": as_utc(token.expires_at),
-        "revoked_at": as_utc(token.revoked_at),
-        "last_used_at": as_utc(token.last_used_at),
-    }
-
-
-def fetch_bookmark_metadata(url: str) -> dict:
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-    }
-    try:
-        response = requests.get(url, headers=headers, timeout=5)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        title_tag = soup.find('title')
-        title = title_tag.string.strip() if title_tag and title_tag.string else "No title found"
-
-        meta_desc = soup.find('meta', attrs={'name': 'description'})
-        if not meta_desc:
-            meta_desc = soup.find('meta', attrs={'property': 'og:description'})
-        description = meta_desc['content'].strip() if meta_desc and meta_desc.get('content') else "No description available"
-
-        return {"success": True, "url": url, "title": title, "description": description}
-    except requests.exceptions.RequestException as e:
-        return {"success": False, "url": url, "error": str(e)}
-
-def as_utc(dt: datetime) -> datetime:
-    """Ensure a datetime is timezone-aware (UTC). SQLite stores naive datetimes."""
-    if dt is not None and dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
-
-def serialize_bookmark(b: BookmarkDB) -> dict:
-    return {
-        "id": b.id,
-        "url": b.url,
-        "title": b.title,
-        "description": b.description,
-        "created_at": as_utc(b.created_at),
-        "tags": [t.name for t in b.tags]
-    }
-
-
-def get_user_tag_names(db: Session, user_id: int) -> list[str]:
-    rows = (
-        db.query(TagDB.name)
-        .join(bookmark_tag_association, TagDB.id == bookmark_tag_association.c.tag_id)
-        .join(
-            BookmarkDB,
-            BookmarkDB.id == bookmark_tag_association.c.bookmark_id,
-        )
-        .filter(BookmarkDB.user_id == user_id)
-        .distinct()
-        .order_by(TagDB.name)
-        .limit(MAX_EXISTING_TAGS)
-        .all()
-    )
-    return [name for (name,) in rows]
-
-
-async def get_automatic_tags(
-    metadata: dict,
-    existing_tags: list[str],
-) -> list[str]:
-    if not tag_suggester.enabled:
-        return []
-    context = TaggingContext(
-        domain=(urlparse(metadata["url"]).hostname or "").lower(),
-        title=metadata["title"],
-        description=metadata["description"],
-        existing_tags=tuple(existing_tags),
-    )
-    try:
-        return await run_in_threadpool(tag_suggester.suggest, context)
-    except Exception as error:
-        logger.warning(
-            "Automatic tagging failed (%s); saving bookmark without suggestions",
-            type(error).__name__,
-        )
-        return []
-
-
-def attach_tags(db: Session, bookmark: BookmarkDB, tag_names: list[str]) -> None:
-    for clean_tag in tag_names:
-        db_tag = db.query(TagDB).filter(TagDB.name == clean_tag).first()
-        if not db_tag:
-            db_tag = TagDB(name=clean_tag)
-        bookmark.tags.append(db_tag)
-
-# ==========================================
-# AUTH ENDPOINTS
-# ==========================================
-
-@app.post("/api/auth/register", status_code=201)
-async def register(request: UserRegisterRequest, db: Session = Depends(get_db)):
-    existing = db.query(UserDB).filter(UserDB.username == request.username).first()
-    if existing:
-        raise HTTPException(status_code=409, detail="Username already taken")
-    user = UserDB(
-        username=request.username,
-        hashed_password=hash_password(request.password),
-    )
-    db.add(user)
-    db.commit()
-    db.refresh(user)
-    return {"id": user.id, "username": user.username, "created_at": as_utc(user.created_at)}
-
-
-@app.post("/api/auth/login")
-async def login(request: UserLoginRequest, response: Response, db: Session = Depends(get_db)):
-    user = db.query(UserDB).filter(UserDB.username == request.username).first()
-    if not user or not verify_password(request.password, user.hashed_password):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
-    token = create_access_token(
-        data={"sub": user.username},
-        expires_delta=timedelta(days=ACCESS_TOKEN_EXPIRE_DAYS),
-    )
-    response.set_cookie(
-        key=SESSION_COOKIE_NAME,
-        value=token,
-        max_age=SESSION_COOKIE_MAX_AGE,
-        **session_cookie_scope(),
-    )
-    return {"id": user.id, "username": user.username, "created_at": as_utc(user.created_at)}
-
-
-@app.post("/api/auth/bot-tokens", status_code=201)
-async def create_bot_token(
-    request: BotTokenRequest,
-    response: Response,
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
-):
-    raw_token = BOT_TOKEN_PREFIX + secrets.token_urlsafe(32)
-    now = datetime.now(timezone.utc)
-    stored = BotTokenDB(
-        user_id=current_user.id,
-        name=request.name,
-        token_hash=hash_bot_token(raw_token),
-        created_at=now,
-        expires_at=(now + timedelta(days=request.expires_in_days)
-                    if request.expires_in_days is not None else None),
-    )
-    db.add(stored)
-    db.commit()
-    db.refresh(stored)
-    response.headers["Cache-Control"] = "no-store"
-    return {**serialize_bot_token(stored), "token": raw_token}
-
-
-@app.get("/api/auth/bot-tokens")
-async def list_bot_tokens(
-    response: Response,
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
-):
-    response.headers["Cache-Control"] = "no-store"
-    tokens = db.query(BotTokenDB).filter(
-        BotTokenDB.user_id == current_user.id
-    ).order_by(BotTokenDB.id.desc()).all()
-    return [serialize_bot_token(token) for token in tokens]
-
-
-@app.delete("/api/auth/bot-tokens/{token_id}", status_code=204)
-async def revoke_bot_token(
-    token_id: int,
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
-):
-    token = db.query(BotTokenDB).filter(
-        BotTokenDB.id == token_id, BotTokenDB.user_id == current_user.id
-    ).first()
-    if token is None:
-        raise HTTPException(status_code=404, detail="Bot token not found")
-    if token.revoked_at is None:
-        token.revoked_at = datetime.now(timezone.utc)
-        db.commit()
-    return Response(status_code=204, headers={"Cache-Control": "no-store"})
-
-
-@app.post("/api/auth/logout")
-async def logout(response: Response):
-    response.delete_cookie(key=SESSION_COOKIE_NAME, **session_cookie_scope())
-    return {"success": True}
-
-
-@app.get("/api/auth/me")
-async def me(current_user: UserDB = Depends(get_current_user)):
-    return {"id": current_user.id, "username": current_user.username, "created_at": as_utc(current_user.created_at)}
-
-
-@app.put("/api/auth/password")
-async def change_password(
-    req: ChangePasswordRequest,
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
-):
-    if not verify_password(req.current_password, current_user.hashed_password):
-        raise HTTPException(status_code=400, detail="Current password is incorrect")
-    current_user.hashed_password = hash_password(req.new_password)
-    db.commit()
-    return {"message": "Password updated successfully"}
-
-
-# ==========================================
-# ENDPOINTS
-# ==========================================
-
-@app.get("/api/bookmarks")
-async def get_bookmarks(
-    skip: int = 0,
-    limit: int = 50,
-    tag: Optional[str] = Query(None, description="Filter by tag name"),
-    search: Optional[str] = Query(None, description="Search in title, description, or URL"),
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
-):
-    query = db.query(BookmarkDB).filter(BookmarkDB.user_id == current_user.id)
-
-    if tag:
-        query = query.filter(BookmarkDB.tags.any(TagDB.name == tag.lower()))
-
-    if search:
-        term = f"%{search}%"
-        query = query.filter(
-            or_(
-                BookmarkDB.title.ilike(term),
-                BookmarkDB.description.ilike(term),
-                BookmarkDB.url.ilike(term),
-            )
-        )
-
-    bookmarks = (
-        query
-        .order_by(BookmarkDB.created_at.desc())
-        .offset(skip)
-        .limit(limit)
-        .all()
-    )
-
-    return [serialize_bookmark(b) for b in bookmarks]
-
-
-@app.post("/api/bookmarks", status_code=201)
-async def create_bookmark(
-    request: BookmarkRequest,
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_bookmark_creator),
-):
-    existing = db.query(BookmarkDB).filter(
-        BookmarkDB.url == request.url,
-        BookmarkDB.user_id == current_user.id
-    ).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="Bookmark already exists")
-
-    metadata = fetch_bookmark_metadata(request.url)
-    if not metadata["success"]:
-        raise HTTPException(status_code=400, detail=metadata["error"])
-
-    new_bookmark = BookmarkDB(
-        url=metadata["url"],
-        title=metadata["title"],
-        description=metadata["description"],
-        user_id=current_user.id,
-    )
-
-    existing_tags = get_user_tag_names(db, current_user.id)
-    suggested_tags = await get_automatic_tags(metadata, existing_tags)
-    tag_names = merge_tags(request.tags, suggested_tags, existing_tags)
-    attach_tags(db, new_bookmark, tag_names)
-
-    db.add(new_bookmark)
-    db.commit()
-    db.refresh(new_bookmark)
-
-    return serialize_bookmark(new_bookmark)
-
-
-@app.put("/api/bookmarks/{bookmark_id}")
-async def update_bookmark(
-    bookmark_id: int,
-    request: BookmarkUpdateRequest,
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
-):
-    bookmark = db.query(BookmarkDB).filter(
-        BookmarkDB.id == bookmark_id,
-        BookmarkDB.user_id == current_user.id
-    ).first()
-    if not bookmark:
-        raise HTTPException(status_code=404, detail="Bookmark not found")
-
-    if request.url is not None and request.url != bookmark.url:
-        metadata = fetch_bookmark_metadata(request.url)
-        if not metadata["success"]:
-            raise HTTPException(status_code=400, detail=metadata["error"])
-        bookmark.url = metadata["url"]
-        bookmark.title = metadata["title"]
-        bookmark.description = metadata["description"]
-
-    if request.tags is not None:
-        bookmark.tags = []
-        attach_tags(db, bookmark, merge_tags(request.tags, [], []))
-
-    db.commit()
-    db.refresh(bookmark)
-    return serialize_bookmark(bookmark)
-
-
-@app.delete("/api/bookmarks/{bookmark_id}")
-async def delete_bookmark(
-    bookmark_id: int,
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
-):
-    bookmark = db.query(BookmarkDB).filter(
-        BookmarkDB.id == bookmark_id,
-        BookmarkDB.user_id == current_user.id
-    ).first()
-    if not bookmark:
-        raise HTTPException(status_code=404, detail="Bookmark not found")
-
-    db.delete(bookmark)
-    db.commit()
-
-    return {"success": True, "message": f"Bookmark {bookmark_id} deleted"}
-
-
-@app.get("/api/tags")
-async def get_all_tags(
-    db: Session = Depends(get_db),
-    current_user: UserDB = Depends(get_current_user),
-):
-    user_bookmarks = db.query(BookmarkDB).filter(BookmarkDB.user_id == current_user.id).all()
-    seen = {}
-    for b in user_bookmarks:
-        for t in b.tags:
-            seen[t.id] = t
-    tags = sorted(seen.values(), key=lambda t: t.name)
-    return [{"id": t.id, "name": t.name} for t in tags]
-
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+app.include_router(auth_router)
+app.include_router(bookmark_router)

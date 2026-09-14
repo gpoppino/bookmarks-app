@@ -1,5 +1,5 @@
 """Integration tests for user authentication and bookmark CRUD."""
-import importlib.util
+import importlib
 import os
 from pathlib import Path
 import sys
@@ -10,24 +10,23 @@ from unittest.mock import Mock, patch
 from fastapi.testclient import TestClient
 
 
-BACKEND_MODULE = Path(__file__).resolve().with_name("main.py")
+BACKEND_MODULE_NAMES = (
+    "main", "auth_routes", "bookmark_routes", "bookmark_service", "auth",
+    "config", "database", "metadata", "models", "schemas",
+)
 
 
 class AuthenticationAndBookmarkIntegrationTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.directory = tempfile.TemporaryDirectory()
-        cls.module_name = "bookmarks_api_integration_tests"
         previous = Path.cwd()
         try:
             os.chdir(cls.directory.name)
-            spec = importlib.util.spec_from_file_location(
-                cls.module_name, BACKEND_MODULE
-            )
-            cls.api = importlib.util.module_from_spec(spec)
-            sys.modules[cls.module_name] = cls.api
+            for module_name in BACKEND_MODULE_NAMES:
+                sys.modules.pop(module_name, None)
             with patch.dict(os.environ, {"APP_ENV": "development"}):
-                spec.loader.exec_module(cls.api)
+                cls.api = importlib.import_module("main")
             # Pin the SQLite connection to the disposable working directory.
             cls.api.engine.connect().close()
         finally:
@@ -36,7 +35,8 @@ class AuthenticationAndBookmarkIntegrationTests(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.api.engine.dispose()
-        sys.modules.pop(cls.module_name, None)
+        for module_name in BACKEND_MODULE_NAMES:
+            sys.modules.pop(module_name, None)
         cls.directory.cleanup()
 
     def setUp(self):
@@ -44,7 +44,7 @@ class AuthenticationAndBookmarkIntegrationTests(unittest.TestCase):
         self.api.Base.metadata.create_all(self.api.engine)
         self.client = TestClient(self.api.app)
         self.metadata = patch.object(
-            self.api,
+            self.api.bookmark_routes,
             "fetch_bookmark_metadata",
             side_effect=lambda url: {
                 "success": True,
@@ -172,7 +172,7 @@ class AuthenticationAndBookmarkIntegrationTests(unittest.TestCase):
             "new-three",
             "FastAPI",
         ]
-        with patch.object(self.api, "tag_suggester", suggester):
+        with patch.object(self.api.bookmark_service, "tag_suggester", suggester):
             created = self.create_bookmark(
                 "https://automatic.test", ["manual", "python"]
             )
@@ -192,7 +192,7 @@ class AuthenticationAndBookmarkIntegrationTests(unittest.TestCase):
         suggester = Mock(enabled=True)
         suggester.suggest.side_effect = TimeoutError("provider timeout")
 
-        with patch.object(self.api, "tag_suggester", suggester):
+        with patch.object(self.api.bookmark_service, "tag_suggester", suggester):
             created = self.create_bookmark(tags=["manual"])
 
         self.assertEqual(created.status_code, 201, created.text)
@@ -211,7 +211,7 @@ class AuthenticationAndBookmarkIntegrationTests(unittest.TestCase):
 
         suggester = Mock(enabled=True)
         suggester.suggest.return_value = []
-        with patch.object(self.api, "tag_suggester", suggester):
+        with patch.object(self.api.bookmark_service, "tag_suggester", suggester):
             created = self.create_bookmark("https://bob.test")
 
         self.assertEqual(created.status_code, 201, created.text)
