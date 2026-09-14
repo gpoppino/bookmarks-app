@@ -57,6 +57,46 @@ describe('API client', () => {
     })
   })
 
+  it('serializes bookmark create, update, and delete mutations', async () => {
+    const fetchMock = vi.fn<typeof fetch>()
+    fetchMock
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 7, url: 'https://example.test', tags: ['react'] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ id: 7, url: 'https://updated.test', tags: [] }),
+      } as Response)
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true, message: 'deleted' }),
+      } as Response)
+    vi.stubGlobal('fetch', fetchMock)
+
+    await api.createBookmark({ url: 'https://example.test', tags: ['react'] })
+    await api.updateBookmark(7, { url: 'https://updated.test', tags: [] })
+    await api.deleteBookmark(7)
+
+    expect(fetchMock.mock.calls.map(([requestURL, options]) => ({
+      path: new URL(String(requestURL)).pathname,
+      method: options?.method,
+      body: options?.body,
+    }))).toEqual([
+      {
+        path: '/api/bookmarks',
+        method: 'POST',
+        body: JSON.stringify({ url: 'https://example.test', tags: ['react'] }),
+      },
+      {
+        path: '/api/bookmarks/7',
+        method: 'PUT',
+        body: JSON.stringify({ url: 'https://updated.test', tags: [] }),
+      },
+      { path: '/api/bookmarks/7', method: 'DELETE', body: undefined },
+    ])
+  })
+
   it('surfaces API error details', async () => {
     mockFetch({ detail: 'Not authenticated' }, false)
 
