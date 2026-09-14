@@ -45,7 +45,10 @@ go build -o bookmarks .
 The username flag is optional for interactive login and registration. Passwords
 are never accepted as command-line values because arguments can leak through
 shell history, logs, scripts, and process inspection. Interactive password input
-is hidden.
+is hidden. New passwords must contain at least 15 characters and no more than 72
+UTF-8 bytes. Spaces and passphrases are supported; no particular mix of symbols,
+numbers, or letter case is required. The CLI prints the backend's validation
+message when a password is rejected.
 
 For non-interactive use, pass `--password-stdin` and always supply `--username`:
 

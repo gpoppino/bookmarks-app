@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 BACKEND_MODULE_NAMES = (
     "main", "auth_routes", "bookmark_routes", "bookmark_service", "auth",
-    "config", "database", "metadata", "models", "schemas",
+    "config", "database", "metadata", "models", "password_policy", "schemas",
 )
 
 
@@ -57,13 +57,13 @@ class AuthenticationAndBookmarkIntegrationTests(unittest.TestCase):
         self.addCleanup(self.metadata.stop)
         self.addCleanup(self.client.close)
 
-    def register(self, username, password="password-123"):
+    def register(self, username, password="password-123456"):
         return self.client.post(
             "/api/auth/register",
             json={"username": username, "password": password},
         )
 
-    def login(self, username, password="password-123"):
+    def login(self, username, password="password-123456"):
         return self.client.post(
             "/api/auth/login",
             json={"username": username, "password": password},
@@ -103,23 +103,53 @@ class AuthenticationAndBookmarkIntegrationTests(unittest.TestCase):
 
         wrong = self.client.put(
             "/api/auth/password",
-            json={"current_password": "wrong", "new_password": "new-password"},
+            json={"current_password": "wrong", "new_password": "new-password-123"},
         )
         self.assertEqual(wrong.status_code, 400, wrong.text)
 
         changed = self.client.put(
             "/api/auth/password",
             json={
-                "current_password": "password-123",
-                "new_password": "new-password",
+                "current_password": "password-123456",
+                "new_password": "new-password-123",
             },
         )
         self.assertEqual(changed.status_code, 200, changed.text)
 
         self.client.cookies.clear()
         self.assertEqual(self.login("alice").status_code, 401)
-        self.assertEqual(self.login("alice", "new-password").status_code, 200)
+        self.assertEqual(self.login("alice", "new-password-123").status_code, 200)
         self.assertEqual(self.client.get("/api/auth/me").status_code, 200)
+
+    def test_registration_rejects_passwords_outside_the_policy(self):
+        cases = (
+            ("short", "at least 15 characters"),
+            (" " * 15, "only of whitespace"),
+            ("valid-password\n", "control characters"),
+            ("é" * 37, "72 UTF-8 bytes"),
+        )
+        for index, (password, expected_error) in enumerate(cases):
+            with self.subTest(expected_error=expected_error):
+                response = self.register(f"rejected-{index}", password)
+                self.assertEqual(response.status_code, 400, response.text)
+                self.assertIn(expected_error, response.json()["detail"])
+
+        accepted = self.register("passphrase-user", "correct horse battery staple")
+        self.assertEqual(accepted.status_code, 201, accepted.text)
+
+    def test_password_change_enforces_policy_and_preserves_old_password(self):
+        self.assertEqual(self.register("alice").status_code, 201)
+        self.assertEqual(self.login("alice").status_code, 200)
+
+        rejected = self.client.put(
+            "/api/auth/password",
+            json={"current_password": "password-123456", "new_password": "too-short"},
+        )
+        self.assertEqual(rejected.status_code, 400, rejected.text)
+        self.assertIn("at least 15 characters", rejected.json()["detail"])
+
+        self.client.cookies.clear()
+        self.assertEqual(self.login("alice", "password-123456").status_code, 200)
 
     def test_bookmark_create_list_update_delete_flow(self):
         self.assertEqual(self.register("alice").status_code, 201)

@@ -88,6 +88,15 @@ GET /api/bookmarks?search=api&tag=tutorial&skip=0&limit=20
 
 SQLite database is auto-created as `bookmarks.db` in the project root on first run. No migration step needed.
 
+## Password policy
+
+New passwords must contain at least 15 Unicode characters and no more than 72
+UTF-8 bytes, and cannot consist only of whitespace or contain control
+characters. Spaces and passphrases are supported. There are no uppercase,
+lowercase, number, or symbol composition rules. The backend enforces this policy
+on registration and password changes and returns an actionable `400` response
+when validation fails. The byte limit prevents bcrypt from truncating input.
+
 ## Automatic tagging with OpenAI
 
 Automatic tagging is disabled by default. When enabled, bookmark creation sends

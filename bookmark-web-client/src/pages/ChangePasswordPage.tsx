@@ -61,8 +61,14 @@ export function ChangePasswordPage() {
               value={newPassword}
               onChange={(e) => setNewPassword(e.target.value)}
               autoComplete="new-password"
+              minLength={15}
+              maxLength={72}
+              aria-describedby="new-password-policy"
               required
             />
+            <span id="new-password-policy" className="input-hint">
+              Use at least 15 characters. Spaces and passphrases are welcome.
+            </span>
           </div>
           <div className="input-group">
             <label className="input-label" htmlFor="confirm-password">Confirm new password</label>
@@ -73,6 +79,8 @@ export function ChangePasswordPage() {
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               autoComplete="new-password"
+              minLength={15}
+              maxLength={72}
               required
             />
           </div>
