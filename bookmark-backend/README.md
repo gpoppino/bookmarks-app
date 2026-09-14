@@ -86,7 +86,29 @@ GET /api/bookmarks?search=api&tag=tutorial&skip=0&limit=20
 
 ## Database
 
-SQLite database is auto-created as `bookmarks.db` in the project root on first run. No migration step needed.
+Set `DATABASE_URL` to any SQLAlchemy database URL. Local development defaults to
+`sqlite:///./bookmarks.db`, so the database is created relative to the backend's
+working directory with no extra setup.
+
+Production SQLite deployments should use an absolute path on persistent storage,
+for example:
+
+```sh
+DATABASE_URL=sqlite:////var/lib/bookmarks-app/bookmarks.db
+```
+
+The parent directory must exist, survive application upgrades, and be writable
+by the service account. For a systemd service, `StateDirectory=bookmarks-app`
+can create and manage `/var/lib/bookmarks-app`; set the URL with an
+`Environment=` directive or an environment file. Stop the service before moving
+an existing `bookmarks.db` into that directory, preserve its ownership, and
+verify a backup before restarting. Use SQLite's backup mechanism for backups of
+a running database rather than copying an active file.
+
+Only SQLite receives the `check_same_thread` connection option. Other SQLAlchemy
+dialects can be selected later with `DATABASE_URL`; install the corresponding
+DBAPI driver when adopting one. Database credentials embedded in a URL must be
+provided through deployment secret management and must not be committed.
 
 ## Password policy
 
@@ -227,14 +249,17 @@ Configure the generated value as `SECRET_KEY`, then start the service with
 default):
 
 ```sh
-APP_ENV=production SECRET_KEY='<value-from-your-secret-manager>' uvicorn main:app
+APP_ENV=production \
+SECRET_KEY='<value-from-your-secret-manager>' \
+DATABASE_URL='sqlite:////var/lib/bookmarks-app/bookmarks.db' \
+uvicorn main:app
 ```
 
 Startup fails before serving requests when the secret is missing, shorter than
 32 characters, or equal to the built-in development key. Rotating this value
 invalidates existing login JWTs, so users will need to log in again.
 
-Deploy the updated `main.py` and restart the backend. Startup's existing
+Deploy the complete backend directory and restart the service. Startup's existing
 `Base.metadata.create_all()` adds the `bot_tokens` table and indexes to an
 existing SQLite database without changing user/bookmark tables. Back up the
 database before deployment as usual. Older backend versions cannot authenticate

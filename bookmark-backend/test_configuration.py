@@ -14,12 +14,14 @@ class SecretKeyConfigurationTests(unittest.TestCase):
     def import_backend(
         self,
         expression="main.SECRET_KEY",
+        module="main",
         systemd_credentials=None,
         **environment,
     ):
         process_environment = os.environ.copy()
         process_environment.pop("APP_ENV", None)
         process_environment.pop("SECRET_KEY", None)
+        process_environment.pop("DATABASE_URL", None)
         process_environment.pop("AUTO_TAGGING_ENABLED", None)
         process_environment.pop("OPENAI_API_KEY", None)
         process_environment.pop("CREDENTIALS_DIRECTORY", None)
@@ -40,7 +42,7 @@ class SecretKeyConfigurationTests(unittest.TestCase):
                 )
 
             return subprocess.run(
-                [sys.executable, "-c", f"import main; print({expression})"],
+                [sys.executable, "-c", f"import {module}; print({expression})"],
                 cwd=directory,
                 env=process_environment,
                 capture_output=True,
@@ -144,6 +146,49 @@ class SecretKeyConfigurationTests(unittest.TestCase):
                 )
                 self.assertEqual(deployed.returncode, 0, deployed.stderr)
                 self.assertEqual(deployed.stdout.strip(), "True")
+
+    def test_database_url_defaults_to_local_sqlite(self):
+        result = self.import_backend(
+            expression="config.DATABASE_URL",
+            module="config",
+            APP_ENV="development",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "sqlite:///./bookmarks.db")
+
+    def test_database_url_accepts_configured_sqlalchemy_urls(self):
+        for database_url in (
+            "sqlite:////var/lib/bookmarks-app/bookmarks.db",
+            "postgresql+psycopg://bookmarks:secret@db.example/bookmarks",
+        ):
+            with self.subTest(database_url=database_url):
+                result = self.import_backend(
+                    expression="config.DATABASE_URL",
+                    module="config",
+                    APP_ENV="development",
+                    DATABASE_URL=f"  {database_url}  ",
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout.strip(), database_url)
+
+    def test_sqlite_engine_uses_the_configured_database_url(self):
+        database_url = "sqlite:///configured.db"
+        result = self.import_backend(
+            expression="main.engine.url",
+            APP_ENV="development",
+            DATABASE_URL=database_url,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), database_url)
+
+    def test_database_url_rejects_an_empty_configured_value(self):
+        result = self.import_backend(
+            expression="config.DATABASE_URL",
+            module="config",
+            APP_ENV="development",
+            DATABASE_URL="   ",
+        )
+        self.assert_configuration_error(result, "DATABASE_URL cannot be empty")
 
 
 if __name__ == "__main__":

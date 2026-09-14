@@ -9,6 +9,7 @@ DEVELOPMENT_ENVIRONMENT = "development"
 LOCAL_DEVELOPMENT_SECRET_KEY = "dev-secret-key-change-in-production"
 MIN_SECRET_KEY_LENGTH = 32
 ENVIRONMENT = os.environ.get("APP_ENV", "production").strip().lower()
+DEFAULT_DATABASE_URL = "sqlite:///./bookmarks.db"
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_DAYS = 30
@@ -19,6 +20,17 @@ SESSION_COOKIE_SAMESITE = "lax"
 SESSION_COOKIE_HTTPONLY = True
 SESSION_COOKIE_SECURE = ENVIRONMENT != DEVELOPMENT_ENVIRONMENT
 SESSION_COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRE_DAYS * 24 * 60 * 60
+
+
+def load_database_url() -> str:
+    """Load the SQLAlchemy database URL, retaining SQLite for local setup."""
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url is None:
+        return DEFAULT_DATABASE_URL
+    database_url = database_url.strip()
+    if not database_url:
+        raise RuntimeError("DATABASE_URL cannot be empty")
+    return database_url
 
 
 def read_systemd_credential(name: str) -> Optional[str]:
@@ -77,3 +89,4 @@ def load_secret_key() -> str:
 
 
 SECRET_KEY = load_secret_key()
+DATABASE_URL = load_database_url()

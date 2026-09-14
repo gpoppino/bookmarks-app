@@ -35,6 +35,7 @@ from bookmark_service import (
 from config import (
     ACCESS_TOKEN_EXPIRE_DAYS,
     ALGORITHM,
+    DATABASE_URL,
     ENVIRONMENT,
     SECRET_KEY,
     SESSION_COOKIE_DOMAIN,
@@ -49,7 +50,7 @@ from config import (
     read_secret_key,
     read_systemd_credential,
 )
-from database import Base, SessionLocal, engine, get_db
+from database import Base, SQLALCHEMY_DATABASE_URL, SessionLocal, engine, get_db
 from metadata import fetch_bookmark_metadata
 from models import BookmarkDB, BotTokenDB, TagDB, UserDB, bookmark_tag_association
 from schemas import (
