@@ -91,6 +91,42 @@ describe('useBookmarks pagination', () => {
     expect(result.current.bookmarks.map(({ id }) => id)).toEqual([7]);
   });
 
+  it('debounces search changes and sends the active search term', async () => {
+    getBookmarks.mockResolvedValue([]);
+    const { rerender } = renderHook(
+      ({ search }: { search: string }) => useBookmarks({ search, selectedTag: null }),
+      { initialProps: { search: '' } },
+    );
+    await waitFor(() => expect(getBookmarks).toHaveBeenCalledTimes(1));
+
+    rerender({ search: 'fast' });
+    rerender({ search: 'fast api' });
+
+    await waitFor(() => expect(getBookmarks).toHaveBeenCalledTimes(2));
+    expect(getBookmarks).toHaveBeenLastCalledWith({
+      search: 'fast api',
+      tag: undefined,
+      skip: 0,
+      limit: BOOKMARKS_PAGE_SIZE + 1,
+    });
+  });
+
+  it('updates the current list after add, edit, and delete actions', async () => {
+    getBookmarks.mockResolvedValue([bookmark(1)]);
+    const { result } = renderHook(() => useBookmarks({ search: '', selectedTag: null }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    act(() => result.current.addBookmark(bookmark(2)));
+    expect(result.current.bookmarks.map(({ id }) => id)).toEqual([2, 1]);
+
+    const updated = { ...bookmark(1), title: 'Updated bookmark' };
+    act(() => result.current.replaceBookmark(updated));
+    expect(result.current.bookmarks.find(({ id }) => id === 1)?.title).toBe('Updated bookmark');
+
+    act(() => result.current.removeBookmark(2));
+    expect(result.current.bookmarks.map(({ id }) => id)).toEqual([1]);
+  });
+
   it('keeps previous-page navigation available after a later page fails', async () => {
     getBookmarks
       .mockResolvedValueOnce(Array.from({ length: BOOKMARKS_PAGE_SIZE + 1 }, (_, index) => bookmark(index + 1)))
