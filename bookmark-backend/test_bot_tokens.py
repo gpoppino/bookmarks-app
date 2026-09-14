@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 
 BACKEND_MODULE_NAMES = (
     "main", "auth_routes", "bookmark_routes", "bookmark_service", "auth",
-    "config", "database", "metadata", "models", "schemas",
+    "config", "database", "metadata", "models", "password_policy", "schemas",
 )
 
 

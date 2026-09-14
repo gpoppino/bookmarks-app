@@ -12,6 +12,7 @@ from auth import hash_bot_token, hash_password, serialize_bot_token
 from auth import session_cookie_scope, verify_password
 from database import get_db
 from models import BotTokenDB, UserDB
+from password_policy import PasswordPolicyError, validate_password
 from schemas import BotTokenRequest, ChangePasswordRequest
 from schemas import UserLoginRequest, UserRegisterRequest
 
@@ -19,11 +20,19 @@ from schemas import UserLoginRequest, UserRegisterRequest
 router = APIRouter(prefix="/api/auth")
 
 
+def enforce_password_policy(password: str) -> None:
+    try:
+        validate_password(password)
+    except PasswordPolicyError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from error
+
+
 @router.post("/register", status_code=201)
 async def register(request: UserRegisterRequest, db: Session = Depends(get_db)):
     existing = db.query(UserDB).filter(UserDB.username == request.username).first()
     if existing:
         raise HTTPException(status_code=409, detail="Username already taken")
+    enforce_password_policy(request.password)
     user = UserDB(username=request.username, hashed_password=hash_password(request.password))
     db.add(user)
     db.commit()
@@ -130,6 +139,7 @@ async def change_password(
 ):
     if not verify_password(request.current_password, current_user.hashed_password):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
+    enforce_password_policy(request.new_password)
     current_user.hashed_password = hash_password(request.new_password)
     db.commit()
     return {"message": "Password updated successfully"}

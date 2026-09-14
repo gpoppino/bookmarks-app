@@ -52,8 +52,14 @@ export function RegisterPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
+              minLength={15}
+              maxLength={72}
+              aria-describedby="password-policy"
               required
             />
+            <span id="password-policy" className="input-hint">
+              Use at least 15 characters. Spaces and passphrases are welcome.
+            </span>
           </div>
           {error && <p className="form-error">{error}</p>}
           <button className="btn-primary" type="submit" disabled={loading}>
