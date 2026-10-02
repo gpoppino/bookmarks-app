@@ -9,7 +9,7 @@ from openai import OpenAI
 from pydantic import BaseModel, Field
 
 
-DEFAULT_OPENAI_MODEL = "gpt-5.4-nano"
+DEFAULT_OPENAI_MODEL = "gpt-6-luna"
 DEFAULT_TIMEOUT_SECONDS = 4.0
 MAX_AUTOMATIC_TAGS = 5
 MAX_NEW_TAGS = 2
