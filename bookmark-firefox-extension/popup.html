@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Guardar en Bookmarks App</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="popup.js"></script>
+</head>
+<body class="popup">
+  <main>
+    <header><h1>Guardar bookmark</h1><button id="options" class="secondary" type="button">Configuración</button></header>
+    <p id="page-title" class="page-title"></p>
+    <form id="bookmark-form">
+      <label for="url">URL de la página</label>
+      <textarea id="url" rows="3" required spellcheck="false" aria-describedby="url-help"></textarea>
+      <p id="url-help" class="help">Solo se envía al guardar. Podés editar la URL.</p>
+      <label for="tags">Etiquetas <span class="muted">(opcionales)</span></label>
+      <input id="tags" type="text" placeholder="go, lectura, fotografía" aria-describedby="tags-help">
+      <p id="tags-help" class="help">Separalas con comas. El servidor obtiene el título y la descripción.</p>
+      <p id="destination" class="help destination"></p>
+      <button id="save" type="submit" disabled>Guardar bookmark</button>
+    </form>
+    <p id="status" role="status" aria-live="polite"></p>
+  </main>
+</body>
+</html>

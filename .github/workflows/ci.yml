@@ -60,3 +60,24 @@ jobs:
           cache-dependency-path: bookmark-cli-client/go.sum
       - run: go test ./...
       - run: go build -o /tmp/bookmarks-cli .
+
+  firefox-extension:
+    name: Firefox extension checks, tests, and package
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: bookmark-firefox-extension
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: bookmark-firefox-extension/package-lock.json
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.11'
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build

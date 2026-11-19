@@ -1,0 +1,36 @@
+:root { color-scheme: light dark; font: 14px/1.5 system-ui, sans-serif; color: #202b43; background: #f5f7fb; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { padding: 20px; }
+.popup { width: 390px; }
+.options { max-width: 700px; margin: 32px auto; }
+.options main { background: #fff; border: 1px solid #d9dfeb; border-radius: 12px; padding: 28px; }
+header { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+h1 { font-size: 20px; margin: 0 0 16px; }
+header h1 { margin: 0; }
+h2 { font-size: 16px; }
+.page-title { font-weight: 600; overflow-wrap: anywhere; max-height: 4.5em; overflow: auto; }
+label { display: block; font-weight: 600; margin-top: 16px; margin-bottom: 6px; }
+input, textarea { font: inherit; width: 100%; padding: 10px; border: 1px solid #8796af; border-radius: 6px; color: inherit; background: #fff; }
+textarea { resize: vertical; }
+button { font: inherit; font-weight: 600; border: 1px solid transparent; border-radius: 6px; padding: 9px 12px; background: #244ed8; color: white; cursor: pointer; }
+button.secondary { background: transparent; border-color: #8796af; color: inherit; }
+button:disabled { opacity: .55; cursor: default; }
+button:focus-visible, input:focus-visible, textarea:focus-visible { outline: 3px solid #b16b00; outline-offset: 2px; }
+#save { width: 100%; }
+#forget { margin-top: 10px; }
+.help, .muted { font-size: 12px; color: #53617b; font-weight: 400; }
+.help { margin: 6px 0 12px; }
+.destination { overflow-wrap: anywhere; }
+#status { margin-bottom: 0; overflow-wrap: anywhere; }
+#status:empty { display: none; }
+[data-state="error"] { color: #a22424; }
+[data-state="success"] { color: #17643b; }
+aside { border-top: 1px solid #d9dfeb; margin-top: 24px; padding-top: 8px; font-size: 13px; }
+@media (prefers-color-scheme: dark) {
+  :root { color: #e4eaf7; background: #172034; }
+  .options main, input, textarea { background: #202c43; }
+  .help, .muted { color: #b5c1d8; }
+  [data-state="error"] { color: #ffb5b5; }
+  [data-state="success"] { color: #8ee0b1; }
+}

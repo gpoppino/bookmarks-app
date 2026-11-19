@@ -7,6 +7,8 @@ bookmark-backend/bookmarks.db
 # Node
 bookmark-web-client/node_modules/
 bookmark-web-client/dist/
+bookmark-firefox-extension/node_modules/
+bookmark-firefox-extension/dist/
 
 # Env
 .env.local

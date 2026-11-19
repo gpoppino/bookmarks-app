@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bookmarks App — Configuración</title>
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="options.js"></script>
+</head>
+<body class="options">
+  <main>
+    <h1>Bookmarks App</h1>
+    <p>Conectá Firefox con tu servidor para guardar páginas desde la barra de herramientas.</p>
+    <form id="settings-form">
+      <label for="base-url">URL del backend</label>
+      <input id="base-url" type="url" required placeholder="https://bookmarks.example.com" aria-describedby="base-url-help">
+      <p id="base-url-help" class="help">La dirección que expone la API, sin /api/bookmarks. Para desarrollo: http://127.0.0.1:8000. Fuera del equipo local se requiere HTTPS.</p>
+      <label for="token">Bot token</label>
+      <input id="token" type="password" autocomplete="off" spellcheck="false" placeholder="bkt_…" aria-describedby="token-help">
+      <p id="token-help" class="help">Crealo en /docs del backend: iniciá sesión y ejecutá POST /api/auth/bot-tokens. Se muestra una sola vez. Un token por navegador permite revocarlos por separado.</p>
+      <p id="token-state" class="help"></p>
+      <button id="save-settings" type="submit" disabled>Guardar y autorizar servidor</button>
+      <button id="forget" class="secondary" type="button" disabled>Borrar configuración local</button>
+    </form>
+    <p id="status" role="status" aria-live="polite"></p>
+    <aside>
+      <h2>Datos enviados y permisos</h2>
+      <p>Al pulsar Guardar bookmark, se envían la URL y las etiquetas al backend configurado, junto con el token para autenticar el pedido. No se envía el historial ni el contenido de otras pestañas.</p>
+      <p>Firefox solicita acceso al host del backend al guardar la configuración. El permiso abarca todos sus puertos; la extensión usa únicamente la URL configurada.</p>
+      <p>El token se guarda en el perfil local de Firefox, sin sincronización ni cifrado adicional. Borrar la configuración no revoca el token: revocalo en el backend si ya no lo vas a usar.</p>
+      <p>El backend obtiene los metadatos de la página y puede usar OpenAI para sugerir etiquetas si esa función está habilitada en el servidor.</p>
+    </aside>
+  </main>
+</body>
+</html>

@@ -1,16 +1,19 @@
 # Bookmarks App
 
-This repository contains three independently runnable components:
+This repository contains four independently runnable components:
 
 - `bookmark-backend`: FastAPI, SQLAlchemy, and SQLite
 - `bookmark-web-client`: React, TypeScript, and Vite
 - `bookmark-cli-client`: Go and Cobra
+- [`bookmark-firefox-extension`](bookmark-firefox-extension/README.md): Firefox
+  toolbar form for saving the current page with optional tags; includes
+  installation, backend/token configuration, and permanent signing instructions
 
 See each component's README for setup and usage instructions.
 
 ## Local CI checks
 
-Pull requests run the backend, web, and CLI jobs defined in
+Pull requests run the backend, web, CLI, and Firefox extension jobs defined in
 `.github/workflows/ci.yml`. Run their local equivalents before pushing:
 
 ```sh
@@ -30,6 +33,13 @@ npm run build
 cd ../bookmark-cli-client
 go test ./...
 go build -o /tmp/bookmarks-cli .
+
+# Firefox extension (Node.js 20+ and Python 3)
+cd ../bookmark-firefox-extension
+npm ci
+npm run lint
+npm test
+npm run build
 ```
 
 The CI setup caches package-manager downloads through the official Python,

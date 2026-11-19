@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "Bookmarks App",
+  "version": "1.0.0",
+  "description": "Guardá la página actual y sus etiquetas en tu servidor de Bookmarks App.",
+  "permissions": ["activeTab", "storage"],
+  "optional_host_permissions": ["https://*/*", "http://*/*"],
+  "action": {
+    "default_title": "Guardar en Bookmarks App",
+    "default_popup": "popup.html",
+    "default_icon": "icons/bookmark.svg"
+  },
+  "icons": {"48": "icons/bookmark.svg", "96": "icons/bookmark.svg"},
+  "background": {"scripts": ["background.js"], "type": "module"},
+  "options_ui": {"page": "options.html", "open_in_tab": true},
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "firefox@bookmarks-app.local",
+      "strict_min_version": "140.0",
+      "data_collection_permissions": {
+        "required": ["authenticationInfo", "browsingActivity"]
+      }
+    }
+  },
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+  }
+}
